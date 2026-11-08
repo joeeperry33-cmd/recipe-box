@@ -40,4 +40,20 @@ describe("shopping list", () => {
     expect(again[0].have).toBe(true);
     expect(again.some((i) => i.name === "paper towels")).toBe(true);
   });
+  it("shows metric weights as ounces and pounds", () => {
+    const a = r("A", 4, [[250, "g", "ground beef"], [200, "g", "ground beef"], [100, "g", "cheddar"], [1, "kg", "potatoes"], [500, "ml", "chicken broth"], [5, "ml", "vanilla"]]);
+    const list = buildList([{ id: "1", recipe_id: "A", day: "Monday", servings: 4 }], new Map([["A", a]]), []);
+    const get = (n: string) => list.find((i) => i.name === n)!;
+    expect([get("ground beef").qty, get("ground beef").unit]).toEqual([1, "lb"]);
+    expect([get("cheddar").qty, get("cheddar").unit]).toEqual([4, "oz"]);
+    expect([get("potatoes").qty, get("potatoes").unit]).toEqual([2.25, "lb"]);
+    expect([get("chicken broth").qty, get("chicken broth").unit]).toEqual([17, "fl oz"]);
+    expect([get("vanilla").qty, get("vanilla").unit]).toEqual([1.25, "tsp"]);
+  });
+  it("adds grams and ounces of the same thing together", () => {
+    const a = r("A", 4, [[8, "oz", "cream cheese"]]);
+    const b = r("B", 4, [[227, "g", "cream cheese"]]);
+    const list = buildList([{ id: "1", recipe_id: "A", day: "Monday", servings: 4 }, { id: "2", recipe_id: "B", day: "Monday", servings: 4 }], new Map([["A", a], ["B", b]]), []);
+    expect(list.filter((i) => i.name === "cream cheese").map((i) => [i.qty, i.unit])).toEqual([[1, "lb"]]);
+  });
 });

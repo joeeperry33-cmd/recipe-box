@@ -93,6 +93,32 @@ export function parseIngLine(line: string, prev: Ingredient[] = []): Ingredient 
   return { qty, unit, item: rest, note, aisle: old?.aisle || guessAisle(rest) };
 }
 
+// Stores in the US sell by ounces and pounds, so metric amounts are converted for the shopping list.
+// Weights are added up in ounces and metric liquids in milliliters, then shown in the unit a store would use.
+const TO_OZ: Record<string, number> = { g: 1 / 28.3495, kg: 1000 / 28.3495, oz: 1, lb: 16 };
+const TO_ML: Record<string, number> = { ml: 1, l: 1000 };
+// Rounds up to a store-friendly step, ignoring tiny overshoots from unit conversion (227 g is 8 oz, not 8.5).
+const up = (x: number, step: number) => Math.max(step, Math.ceil(x / step - 0.05) * step);
+
+/** Turns a recipe amount into the unit used to add it up on the shopping list. */
+export function listUnit(unit: string, qty: number | null): { unit: string; qty: number | null } {
+  if (unit in TO_OZ) return { unit: "oz", qty: qty == null ? null : qty * TO_OZ[unit] };
+  if (unit in TO_ML) return { unit: "ml", qty: qty == null ? null : qty * TO_ML[unit] };
+  return { unit, qty };
+}
+
+/** Shows an added-up amount the way it's sold: ounces up to a pound, then pounds; metric liquids as tsp, tbsp or fl oz. */
+export function storeAmount(unit: string, qty: number | null): { unit: string; qty: number | null } {
+  if (qty == null) return { unit: unit === "ml" ? "fl oz" : unit, qty };
+  if (unit === "oz") { const oz = up(qty, qty < 1 ? 0.25 : 0.5); return oz >= 16 ? { unit: "lb", qty: up(qty / 16, 0.25) } : { unit: "oz", qty: oz }; }
+  if (unit === "ml") {
+    if (qty < 15) return { unit: "tsp", qty: up(qty / 4.929, 0.25) };
+    if (qty < 60) return { unit: "tbsp", qty: up(qty / 14.787, 0.5) };
+    return { unit: "fl oz", qty: up(qty / 29.574, 1) };
+  }
+  return { unit, qty: Math.round(qty * 100) / 100 };
+}
+
 /** Merges the ingredients of every planned meal into one list, keeping what the cook already ticked or edited. */
 export function buildList(entries: PlanEntry[], recipes: Map<string, Recipe>, old: ListItem[]): ListItem[] {
   const prev = new Map(old.map((i) => [i.key, i]));
@@ -105,17 +131,19 @@ export function buildList(entries: PlanEntry[], recipes: Map<string, Recipe>, ol
     for (const g of r.ingredients || []) {
       const name = (g.item || "").trim();
       if (!name) continue;
-      const unit = normUnit(g.unit);
+      const conv = listUnit(normUnit(g.unit), g.qty);
+      const unit = conv.unit;
       const key = (name.toLowerCase().replace(/(es|s)$/, "") + "|" + unit).replace(/[^a-z0-9|]+/g, "-");
       const cur = merged.get(key) ?? { key, name, unit, qty: 0, hasQty: false, aisle: g.aisle || guessAisle(name), from: [], have: false, got: false };
-      if (g.qty != null) { cur.qty = (cur.qty ?? 0) + g.qty * mult; cur.hasQty = true; }
+      if (conv.qty != null) { cur.qty = (cur.qty ?? 0) + conv.qty * mult; cur.hasQty = true; }
       if (!cur.from.includes(r.title)) cur.from.push(r.title);
       merged.set(key, cur);
     }
   }
   const items: ListItem[] = [...merged.values()].map(({ hasQty, ...i }) => {
     const o = prev.get(i.key);
-    return { ...i, qty: hasQty ? Math.round((i.qty ?? 0) * 100) / 100 : null, have: o?.have ?? false, got: o?.got ?? false };
+    const shown = storeAmount(i.unit, hasQty ? i.qty : null);
+    return { ...i, unit: shown.unit, qty: shown.qty, have: o?.have ?? false, got: o?.got ?? false };
   });
   for (const o of old) if (o.manual) items.push(o);
   return items;
