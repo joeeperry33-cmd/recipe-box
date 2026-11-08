@@ -8,6 +8,8 @@ import AddRecipe from "./pages/AddRecipe";
 import Plan from "./pages/Plan";
 import ShoppingList from "./pages/ShoppingList";
 import Friends from "./pages/Friends";
+import SharedRecipe from "./pages/SharedRecipe";
+import { takePending } from "./lib/links";
 
 export function useRoute() {
   const read = () => (location.hash.replace(/^#\/?/, "") || "").split("/");
@@ -24,11 +26,29 @@ export const go = (path: string) => { location.hash = "#/" + path; };
 export default function App() {
   const s = useStore();
   const [page, id] = useRoute();
+  const [wantLogin, setWantLogin] = useState(false);
+
+  // After signing in from a shared link, go back to that recipe so it can be saved.
+  useEffect(() => {
+    if (!s.session) return;
+    const t = takePending();
+    if (t) go("s/" + t);
+  }, [s.session]);
 
   if (!s.ready) return <div className="wrap section"><p className="muted">Loading…</p></div>;
-  if (!s.session) return <Login />;
+  if (!s.session) {
+    if (page === "s" && id && !wantLogin) return (
+      <>
+        <header className="top no-print"><div className="wrap"><div className="row"><span className="brand"><span className="tab-mark" aria-hidden="true" />Recipe Box</span></div></div></header>
+        <main className="wrap"><SharedRecipe token={id} onSignIn={() => setWantLogin(true)} /></main>
+      </>
+    );
+    return <Login />;
+  }
 
-  const pendingIn = s.friendships.filter((f) => f.status === "pending" && f.addressee === s.session!.user.id).length;
+  const myId = s.session.user.id;
+  const pendingIn = s.friendships.filter((f) => f.status === "pending" && f.addressee === myId).length
+    + s.requests.filter((r) => r.status === "open" && r.to_user === myId).length;
   const toBuy = s.list.filter((i) => !i.have && !i.got).length;
   const tab = ["plan", "list", "friends"].includes(page) ? page : "recipes";
 
@@ -40,6 +60,7 @@ export default function App() {
     case "plan": body = <Plan />; break;
     case "list": body = <ShoppingList />; break;
     case "friends": body = <Friends />; break;
+    case "s": body = <SharedRecipe token={id} />; break;
     default: body = <Library />;
   }
 

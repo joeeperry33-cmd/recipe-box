@@ -220,3 +220,8 @@ header.top .wrap{padding-bottom:0}
 .sortby{display:flex;gap:6px;align-items:center;font-size:.9rem;color:var(--muted);font-weight:700}
 .sortby select{font:inherit;font-weight:400;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px}
 .rcard .lines{padding-right:56px}
+/* Share links and recipe requests */
+.share-cta{display:flex;flex-direction:column;gap:10px;align-items:flex-start;padding:16px;background:var(--card);border-radius:10px;box-shadow:var(--shadow)}
+.request{display:flex;flex-direction:column;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
+.request:first-of-type{border-top:0}
+.addrow select,.day select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 10px;min-width:0;max-width:100%}

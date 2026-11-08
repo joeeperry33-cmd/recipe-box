@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { nameOf, useStore } from "../lib/store";
 import { go } from "../App";
 import { Heart, Stars } from "../components/Marks";
+import { APP_NAME, openEmail, recipeLink, shareEmailBody } from "../lib/links";
 
 function useWakeLock(on: boolean, onFail: (msg: string) => void) {
   const lock = useRef<WakeLockSentinel | null>(null);
@@ -78,6 +79,24 @@ export default function RecipeView({ id }: { id: string }) {
       if (error) s.toast("Couldn't share. Try again."); else { s.toast("Shared with " + nameOf(s.people.get(friendId))); s.reload(); }
     }
   }
+  async function emailLink() {
+    const url = await recipeLink(r!.id);
+    if (!url) { s.toast("Couldn't make a link. Try again."); return; }
+    openEmail(`${r!.title}: a recipe for you`, shareEmailBody(r!.title, url, nameOf(s.me)));
+  }
+  async function copyLink() {
+    const pending = recipeLink(r!.id);
+    try {
+      // Safari only allows copying during the tap, so hand it the link while it's still being made.
+      if ("ClipboardItem" in window) {
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": pending.then((u) => { if (!u) throw new Error("no link"); return new Blob([u], { type: "text/plain" }); }) })]);
+      } else {
+        const u = await pending; if (!u) throw new Error("no link");
+        await navigator.clipboard.writeText(u);
+      }
+      s.toast("Link copied. Anyone with the link can read this recipe.");
+    } catch { s.toast("Couldn't copy the link. Try Email a link instead."); }
+  }
   async function copyText() {
     const text = recipeText(r!);
     try { await navigator.clipboard.writeText(text); s.toast("Recipe copied. Paste it into a text or email."); }
@@ -112,6 +131,8 @@ export default function RecipeView({ id }: { id: string }) {
           <button className={"btn" + (planned ? " inplan" : "")} onClick={togglePlan}>{planned ? "✓ In meal plan" : "+ Add to meal plan"}</button>
           <button className="btn" onClick={() => window.print()}>Print</button>
           {mine && <button className="btn" onClick={() => setSharing((v) => !v)} aria-expanded={sharing}>Share with friends</button>}
+          {mine && <button className="btn" onClick={emailLink} title={`Opens your email with a link to this recipe and to ${APP_NAME}`}>Email a link</button>}
+          {mine && <button className="btn" onClick={copyLink}>Copy link</button>}
           <button className="btn" onClick={shareSheet}>Send as text</button>
           {!mine && <button className="btn primary" onClick={copyToMine}>Save a copy to my box</button>}
           {mine && <a className="btn" href={"#/edit/" + r.id}>Edit</a>}

@@ -17,11 +17,38 @@ export default function Friends() {
   const [msg, setMsg] = useState("");
   const [name, setName] = useState(s.me?.display_name ?? "");
   const [pw, setPw] = useState("");
+  const [askWho, setAskWho] = useState("");
+  const [askWhat, setAskWhat] = useState("");
+  const [pick, setPick] = useState<Record<string, string>>({});
 
   const incoming = s.friendships.filter((f) => f.status === "pending" && f.addressee === myId);
   const outgoing = s.friendships.filter((f) => f.status === "pending" && f.requester === myId);
   const friends = s.friendships.filter((f) => f.status === "accepted");
   const other = (f: { requester: string; addressee: string }) => (f.requester === myId ? f.addressee : f.requester);
+  const friendIds = friends.map(other);
+
+  const myRecipes = s.recipes.filter((r) => r.owner_id === myId).sort((a, b) => a.title.localeCompare(b.title));
+  const asksForMe = s.requests.filter((q) => q.to_user === myId && q.status === "open");
+  const myAsks = s.requests.filter((q) => q.from_user === myId);
+
+  async function ask(e: FormEvent) {
+    e.preventDefault();
+    const to = askWho || friendIds[0];
+    if (!to || !askWhat.trim()) return;
+    const { error } = await supabase.from("recipe_requests").insert({ to_user: to, note: askWhat.trim().slice(0, 300) });
+    if (error) { s.toast("Couldn't send that. Try again."); return; }
+    setAskWhat(""); s.toast("Asked " + nameOf(s.people.get(to))); s.reload();
+  }
+  async function answer(id: string, from: string, recipeId: string | null) {
+    if (recipeId) {
+      const { error: shErr } = await supabase.from("recipe_shares").upsert({ recipe_id: recipeId, shared_with: from, shared_by: myId }, { ignoreDuplicates: true });
+      if (shErr) { s.toast("Couldn't share that recipe. Try again."); return; }
+    }
+    const { error } = await supabase.from("recipe_requests").update({ status: recipeId ? "sent" : "declined", recipe_id: recipeId, answered_at: new Date().toISOString() }).eq("id", id);
+    if (error) { s.toast("Couldn't save. Try again."); return; }
+    s.toast(recipeId ? "Recipe sent to " + nameOf(s.people.get(from)) : "Told them you don't have it"); s.reload();
+  }
+  async function dropRequest(id: string) { await supabase.from("recipe_requests").delete().eq("id", id); s.reload(); }
 
   async function invite(e: FormEvent) {
     e.preventDefault(); setMsg("");
@@ -64,6 +91,55 @@ export default function Friends() {
               <button className="btn small" onClick={() => remove(f.id, "Request declined")}>Decline</button></div>
           ))}
         </div>
+      )}
+
+      {asksForMe.length > 0 && (
+        <div className="day"><span className="label" style={{ margin: 0 }}>Recipe requests for you</span>
+          {asksForMe.map((q) => (
+            <div className="request" key={q.id}>
+              <div><b>{nameOf(s.people.get(q.from_user))}</b> is asking for: “{q.note}”</div>
+              {myRecipes.length > 0 ? (
+                <div className="addrow">
+                  <label className="sr" htmlFor={"pick-" + q.id}>Recipe to send</label>
+                  <select id={"pick-" + q.id} value={pick[q.id] ?? ""} onChange={(e) => setPick({ ...pick, [q.id]: e.target.value })}>
+                    <option value="">Choose one of your recipes…</option>
+                    {myRecipes.map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
+                  </select>
+                  <button className="btn small primary" disabled={!pick[q.id]} onClick={() => answer(q.id, q.from_user, pick[q.id])}>Send it</button>
+                </div>
+              ) : null}
+              <div className="btns">
+                <a className="btn small" href="#/add">Add it to my box first</a>
+                <button className="btn small ghost" onClick={() => answer(q.id, q.from_user, null)}>I don't have it</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {friendIds.length > 0 && (
+        <form className="day" onSubmit={ask}>
+          <span className="label" style={{ margin: 0 }}>Ask a friend for a recipe</span>
+          <div className="addrow">
+            {friendIds.length > 1 && (<>
+              <label className="sr" htmlFor="askWho">Friend</label>
+              <select id="askWho" value={askWho || friendIds[0]} onChange={(e) => setAskWho(e.target.value)}>
+                {friendIds.map((f) => <option key={f} value={f}>{nameOf(s.people.get(f))}</option>)}
+              </select>
+            </>)}
+            <label className="sr" htmlFor="askWhat">Which recipe</label>
+            <input id="askWhat" value={askWhat} maxLength={300} onChange={(e) => setAskWhat(e.target.value)}
+              placeholder={friendIds.length === 1 ? `Ask ${nameOf(s.people.get(friendIds[0]))}, like “your lasagna”` : "Which recipe? Like “your lasagna”"} />
+            <button className="btn primary" disabled={!askWhat.trim()}>Ask</button>
+          </div>
+          {myAsks.length > 0 && myAsks.map((q) => (
+            <div className="pentry" key={q.id}>
+              <span className="t">“{q.note}” <span className="muted small">from {nameOf(s.people.get(q.to_user))}: {q.status === "open" ? "waiting" : q.status === "declined" ? "they don't have it" : "sent!"}</span></span>
+              {q.status === "sent" && q.recipe_id && s.recipeMap.has(q.recipe_id) && <a className="btn small primary" href={"#/r/" + q.recipe_id}>Open</a>}
+              <button type="button" className="iconbtn" onClick={() => dropRequest(q.id)}>{q.status === "open" ? "Cancel" : "Clear"}</button>
+            </div>
+          ))}
+        </form>
       )}
 
       <div className="day"><span className="label" style={{ margin: 0 }}>Your friends</span>
