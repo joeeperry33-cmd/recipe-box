@@ -20,7 +20,10 @@ async function errorText(e: unknown): Promise<string> {
 
 type AiRecipe = Parameters<typeof cleanAiRecipe>[0];
 type ReaderOut = { recipe?: AiRecipe; recipes?: AiRecipe[]; more?: boolean; error?: string };
-type Batch = { items: { d: Draft; on: boolean }[]; more: boolean; req: Record<string, unknown> | null; next: number };
+type Batch = { items: { d: Draft; on: boolean; from?: string }[]; more: boolean; req: Record<string, unknown> | null; next: number; failed?: string[] };
+const MAX_BULK = 60; // files per bulk import
+// Folder picking works in desktop browsers and Android Chrome, not on iPhone.
+const canPickFolder = typeof document !== "undefined" && "webkitdirectory" in document.createElement("input") && !/iphone|ipad|ipod/i.test(navigator.userAgent);
 
 /** Saved drafts hold { recipes, more } (older ones hold a single recipe). */
 function asOut(saved: unknown): ReaderOut {
@@ -129,13 +132,60 @@ export default function AddRecipe() {
     finally { setBusy(""); }
   }
 
+  const stopRef = useRef(false);
+
+  /** Reads many files (or a whole folder), one recipe source at a time, then shows everything found in one list. */
+  async function importMany(all: File[]) {
+    // Folders often hold other things; keep only files that could be recipes.
+    const files = all.filter((f) => !f.name.startsWith(".") && /\.(pdf|docx|txt|md|rtf|html?|jpe?g|png|heic|heif|webp|gif)$/i.test(f.name)).slice(0, MAX_BULK);
+    if (!files.length) { setWhere("file"); setErr("No recipe files were found there. Use PDFs, Word (.docx), text files or photos."); return; }
+    setWhere("file"); setErr(""); stopRef.current = false;
+    const items: Batch["items"] = []; const failed: string[] = [];
+    try {
+      for (let i = 0; i < files.length && !stopRef.current; i++) {
+        const f = files[i];
+        setBusy(`Reading ${i + 1} of ${files.length}: ${f.name}… ${items.length} recipe${items.length === 1 ? "" : "s"} found so far. Keep the app open.`);
+        let req: Record<string, unknown>; let paths: string[] = [];
+        const got = await readRecipeFile(f);
+        if (got.kind === "error") { failed.push(`${f.name}: ${got.error}`); continue; }
+        if (got.kind === "image") {
+          // Each photo in a bulk import is read as its own recipe card, and kept with it.
+          try {
+            const jpg = await photoToJpeg(f);
+            const up = await supabase.storage.from("recipe-photos").upload(`${myId}/${uid()}-0.jpg`, jpg, { contentType: "image/jpeg" });
+            if (!up.error) paths = [up.data.path];
+            req = { images: [{ media_type: "image/jpeg", data: await blobToBase64(jpg) }] };
+          } catch { failed.push(`${f.name}: that photo couldn't be opened.`); continue; }
+        } else if (got.kind === "text" && got.text.length < 30) { failed.push(`${f.name}: no recipe text in it.`); continue; }
+        else req = got.kind === "pdf" ? { pdf: got.data } : { text: got.text };
+        // A file can hold many recipes; keep reading until it's done (up to 50 from one file).
+        let skip = 0;
+        for (let round = 0; round < 5 && !stopRef.current; round++) {
+          const out = await runReader(skip ? { ...req, skip } : req, round === 0 ? paths : []);
+          if (!out.recipe) {
+            if (!skip) { failed.push(`${f.name}: ${out.error ?? "couldn't be read."}`); if (paths.length) supabase.storage.from("recipe-photos").remove(paths); }
+            if (out.error && /today/.test(out.error)) stopRef.current = true; // hit the daily limit
+            break;
+          }
+          const list = out.recipes ?? [out.recipe];
+          list.forEach((r, j) => items.push({ d: { ...cleanAiRecipe(r), photo_paths: round === 0 && j === 0 ? paths : [] }, on: true, from: f.name }));
+          skip += list.length;
+          if (!out.more) break;
+        }
+      }
+    } finally { setBusy(""); }
+    if (stopRef.current && files.length) failed.push("Stopped before the rest of the files were read.");
+    if (!items.length) { setErr(failed.length ? "Nothing could be read. " + failed.slice(0, 3).join(" ") : "No recipes were found."); return; }
+    setBatch({ items, more: false, req: null, next: 0, failed });
+  }
+
   async function importFiles(list: FileList) {
     const files = Array.from(list);
+    if (files.length > 1) { importMany(files); return; } // several files: each is read on its own
     setWhere("file"); setErr("");
     const pics = files.filter((f) => f.type.startsWith("image/"));
     const others = files.filter((f) => !f.type.startsWith("image/"));
     if (pics.length && !others.length) { setWhere("photo"); addFiles(pics); return; }
-    if (others.length > 1 || pics.length) { setErr("Import one file at a time (or only photos)."); return; }
     const f = others[0];
     setBusy(`Reading ${f.name}… this can take up to a minute.`);
     try {
@@ -239,12 +289,16 @@ export default function AddRecipe() {
           {batch.items.map((x, i) => (
             <div className="pentry" key={i}>
               <label className="checkrow t"><input type="checkbox" checked={x.on} onChange={(e) => setBatch({ ...batch, items: batch.items.map((y, j) => (j === i ? { ...y, on: e.target.checked } : y)) })} />
-                <span><strong>{x.d.title || "Untitled"}</strong> <span className="muted small">{x.d.category} · {x.d.ingredients.length} ingredients</span></span></label>
+                <span><strong>{x.d.title || "Untitled"}</strong> <span className="muted small">{x.d.category} · {x.d.ingredients.length} ingredients{x.from ? " · " + x.from : ""}</span></span></label>
               <button className="btn small" onClick={() => { setReviewing(i); setDraft(x.d); }}>Check</button>
             </div>
           ))}
           {!batch.items.length && <p className="muted">All saved so far.</p>}
         </div>
+        {!!batch.failed?.length && (
+          <details className="notice warn"><summary>{batch.failed.length} couldn't be read</summary>
+            <ul className="small" style={{ margin: "6px 0 0", paddingLeft: 18 }}>{batch.failed.map((x, i) => <li key={i}>{x}</li>)}</ul></details>
+        )}
         {batch.more && (batch.req
           ? <div className="btns"><button className="btn" disabled={!!busy} onClick={readMore}>Read the next recipes</button></div>
           : <p className="muted small">There are more recipes in that file. Import it again to read the rest.</p>)}
@@ -302,10 +356,16 @@ export default function AddRecipe() {
         <span className="muted small">Google Docs and Google Drive links work too, if the file is shared as "Anyone with the link".</span>
       </form>
       <div className="card share-cta">
-        <strong>Import a file</strong>
-        <span className="muted small">A PDF, Word document (.docx), text file or picture from your phone or computer. On a phone, Google Drive shows up in the file picker too.</span>
-        <div className="btns"><label className={"btn primary" + (busy ? " disabled" : "")} htmlFor="docIn">Choose a file</label></div>
-        <input id="docIn" className="sr" type="file" accept={FILE_ACCEPT} disabled={!!busy} onChange={(e) => { if (e.target.files?.length) importFiles(e.target.files); e.target.value = ""; }} />
+        <strong>Import files</strong>
+        <span className="muted small">PDFs, Word documents (.docx), text files or pictures from your phone or computer. On a phone, Google Drive shows up in the file picker too.</span>
+        <div className="btns">
+          <label className={"btn primary" + (busy ? " disabled" : "")} htmlFor="docIn">Choose files</label>
+          {canPickFolder && <label className={"btn" + (busy ? " disabled" : "")} htmlFor="dirIn">Choose a folder</label>}
+        </div>
+        <input id="docIn" className="sr" type="file" multiple accept={FILE_ACCEPT} disabled={!!busy} onChange={(e) => { if (e.target.files?.length) importFiles(e.target.files); e.target.value = ""; }} />
+        {canPickFolder && <input id="dirIn" className="sr" type="file" disabled={!!busy} {...{ webkitdirectory: "", directory: "" }} onChange={(e) => { if (e.target.files?.length) importMany(Array.from(e.target.files)); e.target.value = ""; }} />}
+        <span className="muted small">Pick several files at once, or a whole folder, and every recipe in them is read. Up to {MAX_BULK} files at a time.</span>
+        {busy && where === "file" && <div className="btns"><button className="btn small" onClick={() => { stopRef.current = true; }}>Stop after this file</button></div>}
         {busy && where === "file" && <div className="status"><span className="spin" />{busy}</div>}
         {err && where === "file" && <div className="notice warn">{err}</div>}
       </div>
