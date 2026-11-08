@@ -7,7 +7,7 @@ const RESULT: Record<string, string> = {
   accepted: "They'd already asked you, so you're now friends.",
   exists: "You're already friends, or a request is waiting.",
   self: "That's your own email.",
-  not_found: "Nobody with that email has a Recipe Box yet. Send them the app's web address so they can sign up, then add them here.",
+  not_found: `Nobody with that email has an account yet. Send them ${location.origin}/#/install so they can install the app and sign up, then add them here.`,
 };
 
 export default function Friends() {
@@ -158,6 +158,12 @@ export default function Friends() {
       <div className="day">
         <label className="checkrow strong"><input type="checkbox" checked={!!s.me?.share_box} onChange={(e) => setShareBox(e.target.checked)} /> Let my friends see my whole recipe box</label>
         <p className="muted small" style={{ margin: 0 }}>When this is off, friends only see the recipes you share with them one at a time.</p>
+      </div>
+
+      <div className="day"><span className="label" style={{ margin: 0 }}>Invite people</span>
+        <p className="muted small" style={{ margin: 0 }}>Send this link. It shows them how to install the app on their phone.</p>
+        <div className="addrow"><input readOnly value={location.origin + "/#/install"} onFocus={(e) => e.target.select()} aria-label="Install link" />
+          <button className="btn" onClick={async () => { try { await navigator.clipboard.writeText(location.origin + "/#/install"); s.toast("Install link copied"); } catch { s.toast("Couldn't copy on this device."); } }}>Copy link</button></div>
       </div>
 
       <h2 style={{ marginTop: 12 }}>Your account</h2>

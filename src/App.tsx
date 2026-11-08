@@ -9,6 +9,7 @@ import Plan from "./pages/Plan";
 import ShoppingList from "./pages/ShoppingList";
 import Friends from "./pages/Friends";
 import SharedRecipe from "./pages/SharedRecipe";
+import Install from "./pages/Install";
 import { takePending } from "./lib/links";
 
 export function useRoute() {
@@ -43,6 +44,7 @@ export default function App() {
         <main className="wrap"><SharedRecipe token={id} onSignIn={() => setWantLogin(true)} /></main>
       </>
     );
+    if (page === "install") return <main className="wrap"><Install signedIn={false} /></main>;
     return <Login />;
   }
 
@@ -61,6 +63,7 @@ export default function App() {
     case "list": body = <ShoppingList />; break;
     case "friends": body = <Friends />; break;
     case "s": body = <SharedRecipe token={id} />; break;
+    case "install": body = <Install signedIn />; break;
     default: body = <Library />;
   }
 

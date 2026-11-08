@@ -4,31 +4,21 @@ import { fmtQty, ingText, type Ingredient } from "../lib/recipes";
 import { useStore } from "../lib/store";
 import { APP_NAME, rememberPending } from "../lib/links";
 import { go } from "../App";
+import InstallHelp from "../components/InstallHelp";
 
 type Shared = {
   title: string; category: string; tags: string[]; servings: number | null; prep_time: string; cook_time: string;
   ingredients: Ingredient[]; steps: string[]; notes: string; source: string; recipe_id: string; shared_by: string;
 };
 
-// Chrome and Android offer an install prompt; iPhone needs Share > Add to Home Screen.
-type InstallEvent = Event & { prompt: () => Promise<void> };
-let installEvent: InstallEvent | null = null;
-window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvent = e as InstallEvent; });
-const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-const installed = () => window.matchMedia("(display-mode: standalone)").matches;
-
 export default function SharedRecipe({ token, onSignIn }: { token: string; onSignIn?: () => void }) {
   const s = useStore();
   const signedIn = !!s.session;
   const [r, setR] = useState<Shared | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
-  const [canInstall, setCanInstall] = useState(!!installEvent);
 
   useEffect(() => {
     supabase.rpc("get_shared_recipe", { link_token: token }).then(({ data }) => setR((data as Shared) ?? null));
-    const on = () => setCanInstall(true);
-    window.addEventListener("beforeinstallprompt", on);
-    return () => window.removeEventListener("beforeinstallprompt", on);
   }, [token]);
 
   if (r === undefined) return <div className="section"><p className="muted">Opening the recipe…</p></div>;
@@ -61,11 +51,7 @@ export default function SharedRecipe({ token, onSignIn }: { token: string; onSig
             <button className="btn primary" onClick={() => { rememberPending(token); onSignIn?.(); }}>Save it: sign in or create an account</button>
           </>
         )}
-        {!installed() && (canInstall && installEvent ? (
-          <button className="btn" onClick={async () => { await installEvent!.prompt(); installEvent = null; setCanInstall(false); }}>Install the app</button>
-        ) : (
-          <span className="muted small">{isIos ? "To install the app on iPhone: tap the Share button in Safari, then “Add to Home Screen”." : "To install the app: open your browser menu and choose “Install app” or “Add to Home screen”."}</span>
-        ))}
+        <InstallHelp compact />
       </div>
       <article className="detail">
         <div className="head">

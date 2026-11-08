@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
+import InstallHelp from "../components/InstallHelp";
 
 export default function Login() {
   const [mode, setMode] = useState<"in" | "up" | "reset">("in");
@@ -50,6 +51,7 @@ export default function Login() {
           {mode === "in" && <button type="button" className="btn ghost small" onClick={() => setMode("reset")}>Forgot password?</button>}
         </div>
       </form>
+      <div className="btns center"><InstallHelp compact /></div>
     </main>
   );
 }
