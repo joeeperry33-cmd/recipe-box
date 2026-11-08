@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
 
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  const apiKey = (Deno.env.get("ANTHROPIC_API_KEY") ?? "").trim().replace(/^["']|["']$/g, "");
   if (!apiKey) return json({ error: "The photo reader isn't set up yet (missing API key)." }, 503);
 
   // Only real signed-in people (not the public app key) may spend AI credits.
@@ -104,6 +104,7 @@ Deno.serve(async (req) => {
     return json({ recipe });
   } catch (e) {
     if (e instanceof Anthropic.RateLimitError) return json({ error: "Too many requests right now. Wait a minute and try again." }, 429);
+    if (e instanceof Anthropic.APIError) console.error("Claude API error", e.status, e.message, "key starts with", apiKey.slice(0, 10), "length", apiKey.length);
     if (e instanceof Anthropic.AuthenticationError) return json({ error: "The photo reader's API key isn't valid." }, 503);
     if (e instanceof Anthropic.BadRequestError) return json({ error: "That photo couldn't be read. Try a JPEG or PNG." }, 400);
     console.error(e);
