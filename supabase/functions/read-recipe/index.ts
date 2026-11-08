@@ -5,6 +5,7 @@ import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const DAILY_LIMIT = 40; // photo reads per person per day
+const MAX_IMAGES = 12; // pages per recipe; matches the app
 
 const CATEGORIES = ["Breakfast", "Main dish", "Side dish", "Soup & salad", "Appetizer & snack", "Bread & baking", "Dessert", "Drink", "Sauce & dressing", "Other"];
 const AISLES = ["Produce", "Meat & seafood", "Dairy & eggs", "Bakery", "Pantry", "Spices & seasonings", "Canned & jarred", "Frozen", "Baking", "Drinks", "Other"];
@@ -43,7 +44,7 @@ const SCHEMA = {
   },
 };
 
-const PROMPT = `Transcribe this recipe for a home cook's recipe app. Keep the cook's wording and amounts; fix only obvious spelling. Handwriting may be messy, so read carefully. Several images are pages or sides of one recipe. Pick the single best category, and assign each ingredient the grocery aisle where it is usually found.`;
+const PROMPT = `Transcribe this recipe for a home cook's recipe app. Keep the cook's wording and amounts; fix only obvious spelling. Handwriting may be messy, so read carefully. Several images are pages or sides of one recipe, in order; combine them into one recipe. Pick the single best category, and assign each ingredient the grocery aisle where it is usually found.`;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
 
   let body: { images?: ImageIn[]; text?: string };
   try { body = await req.json(); } catch { return json({ error: "Bad request" }, 400); }
-  const images = (body.images ?? []).slice(0, 4);
+  const images = (body.images ?? []).slice(0, MAX_IMAGES);
   const text = (body.text ?? "").slice(0, 20000);
   if (!images.length && !text.trim()) return json({ error: "Send a photo or some recipe text." }, 400);
 

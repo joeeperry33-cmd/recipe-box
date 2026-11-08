@@ -206,3 +206,17 @@ header.top .wrap{padding-bottom:0}
   .label,.meta,.tag{color:#444!important}
 }
 .btn{text-decoration:none}
+/* Ratings and favorites */
+.markrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.stars{display:inline-flex;gap:2px}
+.stars button{border:0;background:none;padding:2px 3px;font-size:1.7rem;line-height:1;color:color-mix(in srgb,var(--muted) 45%,transparent);cursor:pointer;min-width:36px;min-height:40px}
+.stars button.on{color:#d99a1e}
+.stars-shown{display:block;color:#d99a1e;font-size:.95rem;letter-spacing:1px;margin-top:2px}
+.stars-shown .dim{color:color-mix(in srgb,var(--muted) 40%,transparent)}
+.heart{position:absolute;right:10px;bottom:10px;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:1.25rem;line-height:1;color:var(--muted);z-index:1}
+.heart.fav,.btn.fav{color:#c8323c}
+.btn.fav{border-color:#c8323c}
+.filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sortby{display:flex;gap:6px;align-items:center;font-size:.9rem;color:var(--muted);font-weight:700}
+.sortby select{font:inherit;font-weight:400;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px}
+.rcard .lines{padding-right:56px}

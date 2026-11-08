@@ -5,6 +5,7 @@ import type { ListItem, PlanEntry, Recipe } from "./recipes";
 
 export type Profile = { id: string; email: string; display_name: string; share_box: boolean };
 export type Friendship = { id: string; requester: string; addressee: string; status: "pending" | "accepted" };
+export type Mark = { rating: number | null; favorite: boolean };
 export type Share = { recipe_id: string; shared_with: string; shared_by: string };
 
 type Store = {
@@ -16,6 +17,8 @@ type Store = {
   people: Map<string, Profile>;
   friendships: Friendship[];
   shares: Share[];
+  marks: Map<string, Mark>;
+  setMark: (recipeId: string, p: Partial<Mark>) => void;
   plan: PlanEntry[];
   list: ListItem[];
   loading: boolean;
@@ -42,6 +45,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [people, setPeople] = useState<Map<string, Profile>>(new Map());
   const [friendships, setFriendships] = useState<Friendship[]>([]);
   const [shares, setShares] = useState<Share[]>([]);
+  const [marks, setMarks] = useState<Map<string, Mark>>(new Map());
   const [plan, setPlanState] = useState<PlanEntry[]>([]);
   const [list, setListState] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,15 +67,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     if (!userId) return;
     setLoading(true); setError("");
-    const [prof, rec, fr, sh, pl, li] = await Promise.all([
+    const [prof, rec, fr, sh, pl, li, mk] = await Promise.all([
       supabase.from("profiles").select("id,email,display_name,share_box"),
       supabase.from("recipes").select("*").order("title"),
       supabase.from("friendships").select("id,requester,addressee,status"),
       supabase.from("recipe_shares").select("recipe_id,shared_with,shared_by"),
       supabase.from("meal_plans").select("entries").eq("user_id", userId).maybeSingle(),
       supabase.from("shopping_lists").select("items").eq("user_id", userId).maybeSingle(),
+      supabase.from("recipe_marks").select("recipe_id,rating,favorite").eq("user_id", userId),
     ]);
-    const err = [prof, rec, fr, sh, pl, li].find((r) => r.error)?.error;
+    const err = [prof, rec, fr, sh, pl, li, mk].find((r) => r.error)?.error;
     if (err) setError("Couldn't load your recipe box. Check your connection and try again.");
     const ps = (prof.data ?? []) as Profile[];
     setPeople(new Map(ps.map((p) => [p.id, p])));
@@ -79,13 +84,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setRecipes((rec.data ?? []) as Recipe[]);
     setFriendships((fr.data ?? []) as Friendship[]);
     setShares((sh.data ?? []) as Share[]);
+    setMarks(new Map((mk.data ?? []).map((m) => [m.recipe_id as string, { rating: m.rating as number | null, favorite: !!m.favorite }])));
     if (pl.data) setPlanState(pl.data.entries as PlanEntry[]);
     if (li.data) setListState(li.data.items as ListItem[]);
     setLoading(false);
   }, [userId]);
 
   useEffect(() => {
-    if (!userId) { setRecipes([]); setMe(null); setPlanState([]); setListState([]); return; }
+    if (!userId) { setRecipes([]); setMarks(new Map()); setMe(null); setPlanState([]); setListState([]); return; }
     reload();
     const onFocus = () => { if (document.visibilityState === "visible") reload(); };
     document.addEventListener("visibilitychange", onFocus);
@@ -105,6 +111,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setPlan = useCallback((p: PlanEntry[]) => { setPlanState(p); save("meal_plans", "entries", p); }, [save]);
   const setList = useCallback((l: ListItem[]) => { setListState(l); save("shopping_lists", "items", l); }, [save]);
 
+  // Star ratings and favorites are personal: each person keeps their own for any recipe they can see.
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
+  const setMark = useCallback(async (recipeId: string, p: Partial<Mark>) => {
+    if (!userId) return;
+    const next: Mark = { ...(marksRef.current.get(recipeId) ?? { rating: null, favorite: false }), ...p };
+    const n = new Map(marksRef.current); n.set(recipeId, next); marksRef.current = n; setMarks(n);
+    const { error } = await supabase.from("recipe_marks").upsert({ user_id: userId, recipe_id: recipeId, rating: next.rating, favorite: next.favorite, updated_at: new Date().toISOString() });
+    if (error) toast("Couldn't save. Check your connection.");
+  }, [userId, toast]);
+
   const upsertRecipeLocal = useCallback((r: Recipe) => setRecipes((rs) => {
     const i = rs.findIndex((x) => x.id === r.id);
     return i >= 0 ? rs.map((x) => (x.id === r.id ? r : x)) : [...rs, r];
@@ -114,7 +131,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const recipeMap = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
 
   const value: Store = {
-    session, ready, me, recipes, recipeMap, people, friendships, shares, plan, list, loading, error,
+    session, ready, me, recipes, recipeMap, people, friendships, shares, marks, setMark, plan, list, loading, error,
     reload, setPlan, setList, upsertRecipeLocal, removeRecipeLocal, setMe, toast, toastMsg,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

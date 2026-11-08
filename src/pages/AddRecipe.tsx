@@ -6,6 +6,8 @@ import { cleanAiRecipe, uid, type Recipe } from "../lib/recipes";
 import RecipeForm, { type Draft } from "./RecipeForm";
 import { go } from "../App";
 
+const MAX_PHOTOS = 12; // pages per recipe; the photo reader accepts the same number
+
 type Photo = { file: File; url: string };
 const EMPTY: Draft = { title: "", category: "Main dish", tags: [], servings: null, prep_time: "", cook_time: "", ingredients: [], steps: [], notes: "", source: "", photo_paths: [], copied_from: null };
 
@@ -31,17 +33,20 @@ export default function AddRecipe() {
 
   function addFiles(files: FileList | File[]) {
     const next = [...photos];
-    for (const f of Array.from(files)) { if (f.type.startsWith("image/") && next.length < 4) next.push({ file: f, url: URL.createObjectURL(f) }); }
-    setPhotos(next); setErr("");
+    for (const f of Array.from(files)) { if (f.type.startsWith("image/") && next.length < MAX_PHOTOS) next.push({ file: f, url: URL.createObjectURL(f) }); }
+    if (Array.from(files).length + photos.length > MAX_PHOTOS) setErr(`A recipe can have up to ${MAX_PHOTOS} photos.`); else setErr("");
+    setPhotos(next);
   }
 
   async function read(fromText: boolean) {
-    setErr(""); setBusy(fromText ? "Reading the recipe…" : "Reading your recipe… this takes about 20 seconds.");
+    setErr(""); setBusy(fromText ? "Reading the recipe…" : photos.length > 4 ? `Reading ${photos.length} pages… this can take a minute or two.` : "Reading your recipe… this takes about 20 seconds.");
     try {
       let images: { media_type: string; data: string }[] = [];
       let paths: string[] = [];
       if (!fromText) {
-        const jpgs = await Promise.all(photos.map((p) => photoToJpeg(p.file)));
+        // One photo at a time, so phones don't run out of memory with many pages.
+        const jpgs: Blob[] = [];
+        for (const p of photos) jpgs.push(await photoToJpeg(p.file));
         images = await Promise.all(jpgs.map(async (b) => ({ media_type: "image/jpeg", data: await blobToBase64(b) })));
         // Keep the original card photos with the recipe.
         const batch = uid();
@@ -77,7 +82,7 @@ export default function AddRecipe() {
       <h2>Add a recipe</h2>
       <div className={"drop" + (over ? " over" : "")} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={onDrop}>
         <strong>Snap or upload your recipe</strong>
-        <span className="muted" style={{ fontSize: ".92rem" }}>Handwritten cards and cookbook pages both work. Add up to 4 photos if it continues on the back or another page.</span>
+        <span className="muted" style={{ fontSize: ".92rem" }}>Handwritten cards and cookbook pages both work. Add up to {MAX_PHOTOS} photos if it continues on the back or more pages, in page order.</span>
         <div className="btns center">
           <label className="btn primary" htmlFor="camIn">Take a photo</label>
           <label className="btn" htmlFor="fileIn">Choose photos</label>

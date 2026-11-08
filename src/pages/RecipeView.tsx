@@ -3,6 +3,7 @@ import { fmtQty, normUnit, recipeText, uid, unitFor, type Recipe } from "../lib/
 import { supabase } from "../lib/supabase";
 import { nameOf, useStore } from "../lib/store";
 import { go } from "../App";
+import { Heart, Stars } from "../components/Marks";
 
 function useWakeLock(on: boolean, onFail: (msg: string) => void) {
   const lock = useRef<WakeLockSentinel | null>(null);
@@ -102,6 +103,7 @@ export default function RecipeView({ id }: { id: string }) {
             {r.source && <span>From {r.source}</span>}
             {!mine && <span>Shared by {nameOf(s.people.get(r.owner_id))}</span>}
           </div>
+          <div className="markrow no-print"><Stars recipeId={r.id} title={r.title} /><Heart recipeId={r.id} title={r.title} withText /></div>
           {r.tags?.length > 0 && <div className="chips">{r.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</div>}
         </div>
         <div className="toolbar no-print">

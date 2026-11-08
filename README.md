@@ -4,8 +4,9 @@ Snap photos of paper recipes and have them read, categorized and saved. Plan a w
 
 ## Features
 
-- **Photo import:** take or choose up to 4 photos per recipe. Claude reads them into a title, ingredients, steps, category, tags and a grocery aisle for each ingredient. You review and fix before saving. You can also paste recipe text or type one in.
+- **Photo import:** take or choose up to 12 photos (pages) per recipe. Claude reads them into a title, ingredients, steps, category, tags and a grocery aisle for each ingredient. You review and fix before saving. You can also paste recipe text or type one in.
 - **Recipe view:** scale servings, tick off ingredients, **Keep screen on** switch (Screen Wake Lock), Big text mode, and **Print** (a clean print layout).
+- **Ratings and favorites:** give any recipe your own 1 to 5 stars and a heart. Filter the box to favorites or sort by rating. Ratings are personal, so friends never see them.
 - **Meal plan:** add recipes to days of the week and set servings per meal.
 - **Shopping list:** built from the meal plan with amounts merged and grouped by aisle. Mark items you already have, edit amounts, add your own items, check things off in the store, and copy the list.
 - **Friends:** add friends by email. Share single recipes, or let friends see your whole box. Friends can save a copy into their own box.
