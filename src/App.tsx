@@ -11,6 +11,7 @@ import Friends from "./pages/Friends";
 import SharedRecipe from "./pages/SharedRecipe";
 import Install from "./pages/Install";
 import { takePending } from "./lib/links";
+import { isInstalled } from "./lib/install";
 
 export function useRoute() {
   const read = () => (location.hash.replace(/^#\/?/, "") || "").split("/");
@@ -52,7 +53,7 @@ export default function App() {
   const pendingIn = s.friendships.filter((f) => f.status === "pending" && f.addressee === myId).length
     + s.requests.filter((r) => r.status === "open" && r.to_user === myId).length;
   const toBuy = s.list.filter((i) => !i.have && !i.got).length;
-  const tab = ["plan", "list", "friends"].includes(page) ? page : "recipes";
+  const tab = ["plan", "list", "friends", "install"].includes(page) ? page : "recipes";
 
   let body;
   switch (page) {
@@ -81,6 +82,8 @@ export default function App() {
             <a href="#/plan" aria-current={tab === "plan" ? "page" : undefined}>Meal plan <span className="count">{s.plan.length}</span></a>
             <a href="#/list" aria-current={tab === "list" ? "page" : undefined}>Shopping list <span className="count">{toBuy}</span></a>
             <a href="#/friends" aria-current={tab === "friends" ? "page" : undefined}>Friends {pendingIn > 0 && <span className="count alert">{pendingIn}</span>}</a>
+            {/* Hidden once the app runs from the home screen, where it's already installed. */}
+            {!isInstalled() && <a href="#/install" aria-current={tab === "install" ? "page" : undefined}>Install app</a>}
           </nav>
         </div>
       </header>
