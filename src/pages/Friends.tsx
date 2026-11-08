@@ -1,14 +1,16 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 import { nameOf, useStore } from "../lib/store";
 import { APP_NAME, openEmail } from "../lib/links";
+import { alertFriend, pushState, turnOffPush, turnOnPush, type PushState } from "../lib/push";
 
 const RESULT: Record<string, string> = {
-  sent: "Friend request sent. It shows up on their Friends tab the next time they open the app. The app doesn't email them, so you can send a heads-up below.",
+  sent: "Friend request sent. It goes to their Friends tab, where they tap Accept. If they've turned on notifications, their phone lets them know.",
+  invited: "They don't have the app yet, so we emailed them an invite. When they open it and pick a password, your friend request is waiting on their Friends tab.",
   accepted: "They'd already asked you, so you're now friends.",
   exists: "You're already friends, or a request is waiting.",
   self: "That's your own email.",
-  not_found: `Nobody with that email has an account yet. Send them ${location.origin}/#/install so they can install the app and sign up, then add them here.`,
+  not_found: `Nobody with that email has an account yet.`,
 };
 
 export default function Friends() {
@@ -23,6 +25,9 @@ export default function Friends() {
   const [askWho, setAskWho] = useState("");
   const [askWhat, setAskWhat] = useState("");
   const [pick, setPick] = useState<Record<string, string>>({});
+  const [push, setPush] = useState<PushState | null>(null);
+  const [sending, setSending] = useState(false);
+  useEffect(() => { pushState().then(setPush); }, []);
 
   const incoming = s.friendships.filter((f) => f.status === "pending" && f.addressee === myId);
   const outgoing = s.friendships.filter((f) => f.status === "pending" && f.requester === myId);
@@ -40,12 +45,13 @@ export default function Friends() {
     if (!to || !askWhat.trim()) return;
     const { error } = await supabase.from("recipe_requests").insert({ to_user: to, note: askWhat.trim().slice(0, 300) });
     if (error) { s.toast("Couldn't send that. Try again."); return; }
-    setAskWhat(""); s.toast("Asked " + nameOf(s.people.get(to))); s.reload();
+    setAskWhat(""); s.toast("Asked " + nameOf(s.people.get(to))); alertFriend("recipe_request", to); s.reload();
   }
   async function answer(id: string, from: string, recipeId: string | null) {
     if (recipeId) {
       const { error: shErr } = await supabase.from("recipe_shares").upsert({ recipe_id: recipeId, shared_with: from, shared_by: myId }, { ignoreDuplicates: true });
       if (shErr) { s.toast("Couldn't share that recipe. Try again."); return; }
+      alertFriend("recipe_sent", from, recipeId);
     }
     const { error } = await supabase.from("recipe_requests").update({ status: recipeId ? "sent" : "declined", recipe_id: recipeId, answered_at: new Date().toISOString() }).eq("id", id);
     if (error) { s.toast("Couldn't save. Try again."); return; }
@@ -55,13 +61,25 @@ export default function Friends() {
 
   async function invite(e: FormEvent) {
     e.preventDefault(); setMsg(""); setSentTo("");
-    const { data, error } = await supabase.rpc("send_friend_request", { friend_email: email });
-    if (error) { setMsg("Couldn't send that. Try again."); return; }
-    setMsg(RESULT[data as string] ?? "Done.");
-    if (data === "sent" || data === "not_found") setSentTo(email.trim());
-    if (data === "sent" || data === "accepted") { setEmail(""); s.reload(); }
+    setSending(true);
+    const { data: out, error } = await supabase.functions.invoke("friends", { body: { action: "invite", email: email.trim() } });
+    setSending(false);
+    if (error) {
+      let text = "Couldn't send that. Try again.";
+      try { const j = await (error as { context?: Response }).context?.json(); if (j?.error) text = j.error; } catch { /* not json */ }
+      setMsg(text); setSentTo(email.trim()); return;
+    }
+    const data = out?.result as string;
+    setMsg(RESULT[data] ?? "Done.");
+    if (data === "sent" || data === "invited") setSentTo(email.trim());
+    if (data === "sent" || data === "accepted" || data === "invited") { setEmail(""); s.reload(); }
   }
-  async function accept(id: string) { await supabase.from("friendships").update({ status: "accepted" }).eq("id", id); s.toast("You're now friends"); s.reload(); }
+  async function accept(id: string, from: string) { await supabase.from("friendships").update({ status: "accepted" }).eq("id", id); s.toast("You're now friends"); alertFriend("friend_accepted", from); s.reload(); }
+  async function togglePush() {
+    if (push === "on") { await turnOffPush(); setPush("off"); s.toast("Notifications off on this phone"); return; }
+    const problem = await turnOnPush();
+    s.toast(problem ?? "Notifications are on"); setPush(await pushState());
+  }
   async function remove(id: string, toast: string) { await supabase.from("friendships").delete().eq("id", id); s.toast(toast); s.reload(); }
   async function setShareBox(v: boolean) {
     const { data, error } = await supabase.from("profiles").update({ share_box: v }).eq("id", myId).select().single();
@@ -84,12 +102,13 @@ export default function Friends() {
       <h2>Friends</h2>
       <form className="form" onSubmit={invite}>
         <div className="field"><label htmlFor="fEmail">Add a friend by email</label>
-          <div className="addrow"><input id="fEmail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="friend@example.com" /><button className="btn primary">Send request</button></div></div>
+          <div className="addrow"><input id="fEmail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="friend@example.com" /><button className="btn primary" disabled={sending}>{sending ? "Sending…" : "Send request"}</button></div>
+          <span className="muted small">If they use the app, the request goes to their Friends tab. If not, they get an email invite.</span></div>
         {msg && <div className="notice">{msg}
           {sentTo && <div className="btns" style={{ marginTop: 8 }}><button type="button" className="btn small primary" onClick={() => openEmail(
             `Join me on ${APP_NAME}`,
             `Hi!\n\nI'd like to share recipes with you on ${APP_NAME}.\n\n` +
-            (msg === RESULT.sent ? "I sent you a friend request. Open the app, go to the Friends tab, and tap Accept.\n\n" : "Make a free account with this email address, then I can add you as a friend.\n\n") +
+            (msg === RESULT.sent ? "I sent you a friend request. Open the app, go to the Friends tab, and tap Accept.\n\n" : msg === RESULT.invited ? "You should get an invite email from the app. Open it, pick a password, and my friend request will be on your Friends tab.\n\n" : "Make a free account with this email address, then I can add you as a friend.\n\n") +
             `Get the app here:\n${location.origin}/#/install\n\n${nameOf(s.me)}`, sentTo)}>Email them a heads-up</button></div>}
         </div>}
       </form>
@@ -98,7 +117,7 @@ export default function Friends() {
         <div className="day"><span className="label" style={{ margin: 0 }}>Waiting for you</span>
           {incoming.map((f) => (
             <div className="pentry" key={f.id}><span className="t">{nameOf(s.people.get(f.requester))} <span className="muted small">{s.people.get(f.requester)?.email}</span></span>
-              <button className="btn small primary" onClick={() => accept(f.id)}>Accept</button>
+              <button className="btn small primary" onClick={() => accept(f.id, f.requester)}>Accept</button>
               <button className="btn small" onClick={() => remove(f.id, "Request declined")}>Decline</button></div>
           ))}
         </div>
@@ -169,6 +188,15 @@ export default function Friends() {
         <label className="checkrow strong"><input type="checkbox" checked={!!s.me?.share_box} onChange={(e) => setShareBox(e.target.checked)} /> Let my friends see my whole recipe box</label>
         <p className="muted small" style={{ margin: 0 }}>When this is off, friends only see the recipes you share with them one at a time.</p>
       </div>
+
+      {push && push !== "unsupported" && (
+        <div className="day"><span className="label" style={{ margin: 0 }}>Notifications</span>
+          {push === "needs-install" ? <p className="muted small" style={{ margin: 0 }}>On iPhone, notifications work once the app is on your home screen. <a href="#/install">See how</a>.</p>
+            : push === "blocked" ? <p className="muted small" style={{ margin: 0 }}>Notifications are blocked for this app. Allow them in your phone's settings, then come back here.</p>
+            : <><p className="muted small" style={{ margin: 0 }}>Get a notice on this phone when a friend sends a request, asks for a recipe, or shares one with you.</p>
+              <div className="btns"><button className={"btn" + (push === "on" ? "" : " primary")} onClick={togglePush}>{push === "on" ? "Turn off notifications" : "Turn on notifications"}</button></div></>}
+        </div>
+      )}
 
       <div className="day"><span className="label" style={{ margin: 0 }}>Invite people</span>
         <p className="muted small" style={{ margin: 0 }}>Send this link. It shows them how to install the app on their phone.</p>

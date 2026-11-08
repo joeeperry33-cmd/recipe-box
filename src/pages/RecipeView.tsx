@@ -1,3 +1,4 @@
+import { alertFriend } from "../lib/push";
 import { useEffect, useRef, useState } from "react";
 import { fmtQty, normUnit, recipeText, uid, unitFor, type Recipe } from "../lib/recipes";
 import { supabase } from "../lib/supabase";
@@ -76,7 +77,7 @@ export default function RecipeView({ id }: { id: string }) {
       if (!error) { s.toast("Stopped sharing"); s.reload(); }
     } else {
       const { error } = await supabase.from("recipe_shares").insert({ recipe_id: r!.id, shared_with: friendId });
-      if (error) s.toast("Couldn't share. Try again."); else { s.toast("Shared with " + nameOf(s.people.get(friendId))); s.reload(); }
+      if (error) s.toast("Couldn't share. Try again."); else { s.toast("Shared with " + nameOf(s.people.get(friendId))); alertFriend("recipe_sent", friendId, r!.id); s.reload(); }
     }
   }
   async function emailLink() {

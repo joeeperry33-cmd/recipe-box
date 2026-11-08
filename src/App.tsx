@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "./lib/store";
 import Login from "./pages/Login";
+import Welcome from "./pages/Welcome";
 import Library from "./pages/Library";
 import RecipeView from "./pages/RecipeView";
 import RecipeEdit from "./pages/RecipeEdit";
@@ -49,6 +50,7 @@ export default function App() {
     return <Login />;
   }
 
+  if (s.session.user.user_metadata?.needs_password) return <Welcome />;
   const myId = s.session.user.id;
   const pendingIn = s.friendships.filter((f) => f.status === "pending" && f.addressee === myId).length
     + s.requests.filter((r) => r.status === "open" && r.to_user === myId).length;

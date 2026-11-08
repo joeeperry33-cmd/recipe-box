@@ -8,6 +8,7 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["icon.svg", "apple-touch-icon.png"],
+      workbox: { importScripts: ["push-sw.js"] },
       manifest: {
         name: "Recipe Box",
         short_name: "Recipes",

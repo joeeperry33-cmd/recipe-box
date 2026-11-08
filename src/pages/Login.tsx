@@ -20,7 +20,7 @@ export default function Login() {
       if (error) setMsg({ kind: "warn", text: error.message.includes("confirm") ? "Confirm your email first. Check your inbox for the link." : "That email and password don't match." });
     } else if (mode === "up") {
       const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { display_name: name.trim() }, emailRedirectTo: redirect } });
-      if (error) setMsg({ kind: "warn", text: /rate limit/i.test(error.message) ? "Too many sign-ups right now. Please try again in an hour." : error.message });
+      if (error) setMsg({ kind: "warn", text: /rate limit/i.test(error.message) ? "Too many sign-ups right now. Please try again in an hour." : /already/i.test(error.message) ? "That email already has an account. If a friend invited you, open the invite email, or tap Forgot password to pick a password." : error.message });
       else if (!data.session) setMsg({ kind: "ok", text: "Check your email and tap the link to finish signing up." });
     } else {
       const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirect });
