@@ -1,3 +1,4 @@
+import { dishUrl } from "../components/DishPhoto";
 import { useMemo, useState } from "react";
 import { CATEGORIES, ingText, uid } from "../lib/recipes";
 import { nameOf, useStore } from "../lib/store";
@@ -68,6 +69,7 @@ export default function Library() {
             {shown.map((r) => (
               <article className="rcard" key={r.id}>
                 <a href={"#/r/" + r.id} className="rcard-link">
+                  {r.dish_photo && <img className="rcard-photo" src={dishUrl(r.dish_photo)} alt="" loading="lazy" />}
                   <div className="head">
                     <div className="cat">{r.category}</div>
                     <h3>{r.title}</h3>

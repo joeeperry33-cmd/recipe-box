@@ -1,4 +1,5 @@
 import { alertFriend } from "../lib/push";
+import DishPhoto from "../components/DishPhoto";
 import { useEffect, useRef, useState } from "react";
 import { fmtQty, normUnit, recipeText, uid, unitFor, type Recipe } from "../lib/recipes";
 import { supabase } from "../lib/supabase";
@@ -113,6 +114,8 @@ export default function RecipeView({ id }: { id: string }) {
     <div className="section">
       <div className="no-print"><a className="btn ghost small" href="#/">← All recipes</a></div>
       <article className={"detail" + (big ? " cook" : "")}>
+        <DishPhoto recipeId={r.id} path={r.dish_photo} canEdit={mine} userId={myId} title={r.title}
+          onChange={(p) => s.upsertRecipeLocal({ ...r, dish_photo: p })} />
         <div className="head">
           <div className="label accent" style={{ margin: 0 }}>{r.category}</div>
           <h2>{r.title}</h2>

@@ -1,3 +1,4 @@
+import DishPhoto from "../components/DishPhoto";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { fmtQty, ingText, type Ingredient } from "../lib/recipes";
@@ -8,7 +9,7 @@ import InstallHelp from "../components/InstallHelp";
 
 type Shared = {
   title: string; category: string; tags: string[]; servings: number | null; prep_time: string; cook_time: string;
-  ingredients: Ingredient[]; steps: string[]; notes: string; source: string; recipe_id: string; shared_by: string;
+  ingredients: Ingredient[]; steps: string[]; notes: string; source: string; recipe_id: string; shared_by: string; dish_photo?: string | null;
 };
 
 export default function SharedRecipe({ token, onSignIn }: { token: string; onSignIn?: () => void }) {
@@ -54,6 +55,7 @@ export default function SharedRecipe({ token, onSignIn }: { token: string; onSig
         <InstallHelp compact />
       </div>
       <article className="detail">
+        <DishPhoto recipeId={r.recipe_id} path={r.dish_photo} canEdit={false} title={r.title} />
         <div className="head">
           <div className="label accent" style={{ margin: 0 }}>{r.category}</div>
           <h2>{r.title}</h2>

@@ -17,6 +17,7 @@ export type Recipe = {
   notes: string;
   source: string;
   photo_paths: string[];
+  dish_photo?: string | null; // path in the dish-photos bucket
   copied_from: string | null;
   created_at?: string;
   updated_at?: string;
