@@ -18,7 +18,16 @@ async function errorText(e: unknown): Promise<string> {
   return "Something went wrong reading that. Check your connection and try again.";
 }
 
-type ReaderOut = { recipe?: Parameters<typeof cleanAiRecipe>[0]; error?: string };
+type AiRecipe = Parameters<typeof cleanAiRecipe>[0];
+type ReaderOut = { recipe?: AiRecipe; recipes?: AiRecipe[]; more?: boolean; error?: string };
+type Batch = { items: { d: Draft; on: boolean }[]; more: boolean; req: Record<string, unknown> | null; next: number };
+
+/** Saved drafts hold { recipes, more } (older ones hold a single recipe). */
+function asOut(saved: unknown): ReaderOut {
+  const o = saved as { recipes?: AiRecipe[]; more?: boolean } | null;
+  if (o?.recipes?.length) return { recipe: o.recipes[0], recipes: o.recipes, more: !!o.more };
+  return saved ? { recipe: saved as AiRecipe } : { error: "Nothing came back. Try again." };
+}
 
 /** The reader keeps working even if the phone drops the connection (screen lock, switching apps),
  *  and saves its result as a draft. So on a dropped connection, wait for that saved result. */
@@ -33,7 +42,7 @@ async function runReader(body: Record<string, unknown>, photoPaths: string[] = [
   while (Date.now() < until) {
     await new Promise((r) => setTimeout(r, 4000));
     const { data: d } = await supabase.from("recipe_drafts").select("status, recipe, error").eq("id", draftId).maybeSingle();
-    if (d?.status === "done") { await supabase.from("recipe_drafts").delete().eq("id", draftId); return { recipe: d.recipe }; }
+    if (d?.status === "done") { await supabase.from("recipe_drafts").delete().eq("id", draftId); return asOut(d.recipe); }
     if (d?.status === "error") { await supabase.from("recipe_drafts").delete().eq("id", draftId); return { error: d.error ?? "Something went wrong reading that. Try again." }; }
   }
   return { error: "The connection dropped while reading. If you come back to Add recipe in a minute, it may be waiting for you." };
@@ -51,7 +60,7 @@ function useScreenOn(on: boolean) {
   }, [on]);
 }
 
-type Waiting = { id: string; recipe: Parameters<typeof cleanAiRecipe>[0]; photo_paths: string[] };
+type Waiting = { id: string; recipe: AiRecipe & { recipes?: AiRecipe[] }; photo_paths: string[] };
 
 export default function AddRecipe() {
   const s = useStore();
@@ -65,6 +74,16 @@ export default function AddRecipe() {
   const [over, setOver] = useState(false);
   const [waiting, setWaiting] = useState<Waiting[]>([]);
   const [where, setWhere] = useState<"photo" | "url" | "file" | "text">("photo");
+  const [batch, setBatch] = useState<Batch | null>(null);
+  const [reviewing, setReviewing] = useState<number | null>(null); // which batch item is open in the form
+  const [saving, setSaving] = useState(false);
+
+  /** One recipe opens for review; several open a list to choose from. */
+  function show(out: ReaderOut, req: Record<string, unknown> | null, paths: string[] = []) {
+    const list = out.recipes?.length ? out.recipes : out.recipe ? [out.recipe] : [];
+    if (list.length === 1 && !out.more) { setDraft({ ...cleanAiRecipe(list[0]), photo_paths: paths }); return; }
+    setBatch({ items: list.map((r, i) => ({ d: { ...cleanAiRecipe(r), photo_paths: i === 0 ? paths : [] }, on: true })), more: !!out.more, req, next: list.length });
+  }
   useScreenOn(!!busy);
 
   // Reads that finished after the app was closed or the connection dropped.
@@ -82,7 +101,7 @@ export default function AddRecipe() {
   function openWaiting(w: Waiting) {
     supabase.from("recipe_drafts").delete().eq("id", w.id).then(() => {});
     setWaiting((x) => x.filter((y) => y.id !== w.id));
-    setDraft({ ...cleanAiRecipe(w.recipe), photo_paths: w.photo_paths ?? [] });
+    show(asOut(w.recipe), null, w.photo_paths ?? []);
   }
 
   const photosRef = useRef(photos);
@@ -102,9 +121,10 @@ export default function AddRecipe() {
     if (!link) { setErr("Paste the full web address of the recipe page, starting with https://"); return; }
     setWhere("url"); setErr(""); setBusy("Getting the recipe from that page… this takes about 20 seconds.");
     try {
-      const out = await runReader({ url: link });
+      const req = { url: link };
+      const out = await runReader(req);
       if (!out.recipe) { setErr(out.error ?? "Something went wrong reading that page. Try again."); return; }
-      setDraft({ ...cleanAiRecipe(out.recipe), photo_paths: [] }); setUrl("");
+      show(out, req); setUrl("");
     } catch { setErr("Something went wrong reading that page. Try again."); }
     finally { setBusy(""); }
   }
@@ -123,9 +143,10 @@ export default function AddRecipe() {
       if (got.kind === "error") { setErr(got.error); return; }
       if (got.kind === "image") { setWhere("photo"); addFiles([f]); return; }
       if (got.kind === "text" && got.text.length < 30) { setErr("No recipe text was found in that file."); return; }
-      const out = await runReader(got.kind === "pdf" ? { pdf: got.data } : { text: got.text });
+      const req = got.kind === "pdf" ? { pdf: got.data } : { text: got.text };
+      const out = await runReader(req);
       if (!out.recipe) { setErr(out.error ?? "Something went wrong reading that file. Try again."); return; }
-      setDraft({ ...cleanAiRecipe(out.recipe), photo_paths: [] });
+      show(out, req);
     } finally { setBusy(""); }
   }
 
@@ -146,9 +167,10 @@ export default function AddRecipe() {
         paths = ups.filter((u) => !u.error).map((u) => u.data!.path);
       }
       setBusy(fromText ? "Reading the recipe…" : `Reading ${photos.length > 1 ? photos.length + " pages" : "your recipe"}… this can take up to a minute. The screen stays on until it's done.`);
-      const out = await runReader(fromText ? { text } : { images }, paths);
+      const req = fromText ? { text } : { images };
+      const out = await runReader(req, paths);
       if (!out.recipe) { setErr(out.error ?? "Something went wrong reading that. Try again."); if (paths.length) supabase.storage.from("recipe-photos").remove(paths); return; }
-      setDraft({ ...cleanAiRecipe(out.recipe), photo_paths: paths });
+      show(out, req, paths);
     } catch {
       setErr("That photo couldn't be opened. Try a different photo.");
     } finally { setBusy(""); }
@@ -158,16 +180,83 @@ export default function AddRecipe() {
     const { id: _i, ...fields } = d;
     const { data, error } = await supabase.from("recipes").insert(fields).select().single();
     if (error || !data) { s.toast("Couldn't save. Try again."); return; }
-    s.upsertRecipeLocal(data as Recipe); s.toast("Saved to your recipe box"); go("r/" + data.id);
+    s.upsertRecipeLocal(data as Recipe); s.toast("Saved to your recipe box");
+    if (reviewing !== null && batch) {
+      // Back to the list, without the one just saved.
+      const items = batch.items.filter((_, i) => i !== reviewing);
+      setReviewing(null); setDraft(null);
+      if (items.length || batch.more) setBatch({ ...batch, items }); else { setBatch(null); go(""); }
+      return;
+    }
+    go("r/" + data.id);
+  }
+
+  async function saveChosen() {
+    if (!batch) return;
+    const chosen = batch.items.filter((x) => x.on);
+    if (!chosen.length) return;
+    setSaving(true);
+    const { data, error } = await supabase.from("recipes").insert(chosen.map(({ d }) => { const { id: _i, ...f } = d; return f; })).select();
+    setSaving(false);
+    if (error || !data) { s.toast("Couldn't save. Try again."); return; }
+    (data as Recipe[]).forEach((r) => s.upsertRecipeLocal(r));
+    // Photos kept for recipes that weren't saved aren't needed.
+    const dropped = batch.items.filter((x) => !x.on).flatMap((x) => x.d.photo_paths);
+    if (dropped.length) supabase.storage.from("recipe-photos").remove(dropped);
+    s.toast(`Saved ${data.length} recipe${data.length === 1 ? "" : "s"} to your recipe box`);
+    if (batch.more && batch.req) setBatch({ ...batch, items: batch.items.filter((x) => !x.on) });
+    else { setBatch(null); go(""); }
+  }
+
+  async function readMore() {
+    if (!batch?.req) return;
+    setErr(""); setBusy("Reading the next recipes… this can take up to a minute.");
+    try {
+      const out = await runReader({ ...batch.req, skip: batch.next });
+      if (!out.recipe) { setErr(out.error ?? "Something went wrong. Try again."); setBatch({ ...batch, more: false }); return; }
+      const list = out.recipes ?? [out.recipe];
+      setBatch({ ...batch, items: [...batch.items, ...list.map((r) => ({ d: { ...cleanAiRecipe(r), photo_paths: [] }, on: true }))], more: !!out.more, next: batch.next + list.length });
+    } finally { setBusy(""); }
   }
 
   if (draft) return (
     <div className="section">
       {draft.title && <div className="notice">Check what was read and fix anything that looks off, then save.</div>}
       <RecipeForm draft={draft} heading={draft.title ? "Review recipe" : "New recipe"} saveLabel="Save to recipe box" onSave={save}
-        onCancel={() => { if (draft.photo_paths.length) supabase.storage.from("recipe-photos").remove(draft.photo_paths); setDraft(null); }} />
+        onCancel={() => { if (reviewing !== null) { setReviewing(null); setDraft(null); return; } if (draft.photo_paths.length) supabase.storage.from("recipe-photos").remove(draft.photo_paths); setDraft(null); }} />
     </div>
   );
+
+  if (batch) {
+    const n = batch.items.filter((x) => x.on).length;
+    const all = n === batch.items.length;
+    return (
+      <div className="section">
+        <h2>{batch.items.length} recipe{batch.items.length === 1 ? "" : "s"} found</h2>
+        <div className="notice">Pick the ones to keep and save them all at once, or open one to check it first.</div>
+        <div className="btns"><button className="btn small" onClick={() => setBatch({ ...batch, items: batch.items.map((x) => ({ ...x, on: !all })) })}>{all ? "Select none" : "Select all"}</button></div>
+        <div className="card">
+          {batch.items.map((x, i) => (
+            <div className="pentry" key={i}>
+              <label className="checkrow t"><input type="checkbox" checked={x.on} onChange={(e) => setBatch({ ...batch, items: batch.items.map((y, j) => (j === i ? { ...y, on: e.target.checked } : y)) })} />
+                <span><strong>{x.d.title || "Untitled"}</strong> <span className="muted small">{x.d.category} · {x.d.ingredients.length} ingredients</span></span></label>
+              <button className="btn small" onClick={() => { setReviewing(i); setDraft(x.d); }}>Check</button>
+            </div>
+          ))}
+          {!batch.items.length && <p className="muted">All saved so far.</p>}
+        </div>
+        {batch.more && (batch.req
+          ? <div className="btns"><button className="btn" disabled={!!busy} onClick={readMore}>Read the next recipes</button></div>
+          : <p className="muted small">There are more recipes in that file. Import it again to read the rest.</p>)}
+        {busy && <div className="status"><span className="spin" />{busy}</div>}
+        {err && <div className="notice warn">{err}</div>}
+        <div className="btns">
+          <button className="btn primary" disabled={!n || saving || !!busy} onClick={saveChosen}>{saving ? "Saving…" : `Save ${n} recipe${n === 1 ? "" : "s"}`}</button>
+          <button className="btn" onClick={() => { batch.items.forEach((x) => x.d.photo_paths.length && supabase.storage.from("recipe-photos").remove(x.d.photo_paths)); setBatch(null); }}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
 
   const onDrop = (e: DragEvent) => { e.preventDefault(); setOver(false); addFiles(e.dataTransfer.files); };
   return (
