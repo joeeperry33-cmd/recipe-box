@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { supabase } from "../lib/supabase";
 import { useStore } from "../lib/store";
 import { blobToBase64, photoToJpeg } from "../lib/images";
+import { FILE_ACCEPT, readRecipeFile } from "../lib/files";
 import { cleanAiRecipe, uid, type Recipe } from "../lib/recipes";
 import RecipeForm, { type Draft } from "./RecipeForm";
 import { go } from "../App";
@@ -63,6 +64,7 @@ export default function AddRecipe() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [over, setOver] = useState(false);
   const [waiting, setWaiting] = useState<Waiting[]>([]);
+  const [where, setWhere] = useState<"photo" | "url" | "file" | "text">("photo");
   useScreenOn(!!busy);
 
   // Reads that finished after the app was closed or the connection dropped.
@@ -88,6 +90,7 @@ export default function AddRecipe() {
   useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.url)), []);
 
   function addFiles(files: FileList | File[]) {
+    setWhere("photo");
     const next = [...photos];
     for (const f of Array.from(files)) { if (f.type.startsWith("image/") && next.length < MAX_PHOTOS) next.push({ file: f, url: URL.createObjectURL(f) }); }
     if (Array.from(files).length + photos.length > MAX_PHOTOS) setErr(`A recipe can have up to ${MAX_PHOTOS} photos.`); else setErr("");
@@ -97,7 +100,7 @@ export default function AddRecipe() {
   async function readUrl() {
     const link = url.trim().match(/https?:\/\/\S+/)?.[0] ?? (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(url.trim()) ? "https://" + url.trim() : "");
     if (!link) { setErr("Paste the full web address of the recipe page, starting with https://"); return; }
-    setErr(""); setBusy("Getting the recipe from that page… this takes about 20 seconds.");
+    setWhere("url"); setErr(""); setBusy("Getting the recipe from that page… this takes about 20 seconds.");
     try {
       const out = await runReader({ url: link });
       if (!out.recipe) { setErr(out.error ?? "Something went wrong reading that page. Try again."); return; }
@@ -106,7 +109,28 @@ export default function AddRecipe() {
     finally { setBusy(""); }
   }
 
+  async function importFiles(list: FileList) {
+    const files = Array.from(list);
+    setWhere("file"); setErr("");
+    const pics = files.filter((f) => f.type.startsWith("image/"));
+    const others = files.filter((f) => !f.type.startsWith("image/"));
+    if (pics.length && !others.length) { setWhere("photo"); addFiles(pics); return; }
+    if (others.length > 1 || pics.length) { setErr("Import one file at a time (or only photos)."); return; }
+    const f = others[0];
+    setBusy(`Reading ${f.name}… this can take up to a minute.`);
+    try {
+      const got = await readRecipeFile(f);
+      if (got.kind === "error") { setErr(got.error); return; }
+      if (got.kind === "image") { setWhere("photo"); addFiles([f]); return; }
+      if (got.kind === "text" && got.text.length < 30) { setErr("No recipe text was found in that file."); return; }
+      const out = await runReader(got.kind === "pdf" ? { pdf: got.data } : { text: got.text });
+      if (!out.recipe) { setErr(out.error ?? "Something went wrong reading that file. Try again."); return; }
+      setDraft({ ...cleanAiRecipe(out.recipe), photo_paths: [] });
+    } finally { setBusy(""); }
+  }
+
   async function read(fromText: boolean) {
+    setWhere(fromText ? "text" : "photo");
     setErr(""); setBusy(fromText ? "Reading the recipe…" : photos.length > 4 ? `Reading ${photos.length} pages… this can take a minute or two.` : "Reading your recipe… this takes about 20 seconds.");
     try {
       let images: { media_type: string; data: string }[] = [];
@@ -173,8 +197,8 @@ export default function AddRecipe() {
           </div>
         )}
         {photos.length > 0 && !busy && <button className="btn primary" onClick={() => read(false)}>Read {photos.length > 1 ? "these photos" : "this photo"}</button>}
-        {busy && !url && <div className="status"><span className="spin" />{busy}</div>}
-        {err && !url && <div className="notice warn">{err}</div>}
+        {busy && where === "photo" && <div className="status"><span className="spin" />{busy}</div>}
+        {err && where === "photo" && <div className="notice warn">{err}</div>}
       </div>
       <form className="card share-cta" onSubmit={(e) => { e.preventDefault(); readUrl(); }}>
         <strong>Import from a website</strong>
@@ -184,14 +208,25 @@ export default function AddRecipe() {
           <input id="recipeUrl" type="text" inputMode="url" autoCapitalize="off" autoCorrect="off" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.example.com/best-lasagna" />
           <button className="btn primary" disabled={!!busy || !url.trim()}>Import</button>
         </div>
-        {busy && url && <div className="status"><span className="spin" />{busy}</div>}
-        {err && url && <div className="notice warn">{err}</div>}
+        {busy && where === "url" && <div className="status"><span className="spin" />{busy}</div>}
+        {err && where === "url" && <div className="notice warn">{err}</div>}
+        <span className="muted small">Google Docs and Google Drive links work too, if the file is shared as "Anyone with the link".</span>
       </form>
+      <div className="card share-cta">
+        <strong>Import a file</strong>
+        <span className="muted small">A PDF, Word document (.docx), text file or picture from your phone or computer. On a phone, Google Drive shows up in the file picker too.</span>
+        <div className="btns"><label className={"btn primary" + (busy ? " disabled" : "")} htmlFor="docIn">Choose a file</label></div>
+        <input id="docIn" className="sr" type="file" accept={FILE_ACCEPT} disabled={!!busy} onChange={(e) => { if (e.target.files?.length) importFiles(e.target.files); e.target.value = ""; }} />
+        {busy && where === "file" && <div className="status"><span className="spin" />{busy}</div>}
+        {err && where === "file" && <div className="notice warn">{err}</div>}
+      </div>
       <details className="paste">
         <summary>Paste a recipe someone texted or emailed you</summary>
         <div className="field" style={{ marginTop: 10 }}><label htmlFor="pasteText">Recipe text</label>
           <textarea id="pasteText" rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste the whole recipe here" /></div>
         <div className="btns" style={{ marginTop: 8 }}><button className="btn primary" disabled={!!busy || !text.trim()} onClick={() => read(true)}>Read this recipe</button></div>
+        {busy && where === "text" && <div className="status"><span className="spin" />{busy}</div>}
+        {err && where === "text" && <div className="notice warn">{err}</div>}
       </details>
       <div><button className="btn" onClick={() => setDraft({ ...EMPTY })}>Type it in by hand instead</button></div>
     </div>
