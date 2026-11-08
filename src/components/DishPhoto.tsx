@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ChangeEvent } from "react";
 import { supabase } from "../lib/supabase";
 import { photoToJpeg } from "../lib/images";
 import { uid } from "../lib/recipes";
@@ -37,15 +37,23 @@ export default function DishPhoto({ recipeId, path, canEdit, userId, title, onCh
     onChange?.(null);
   }
 
-  const input = canEdit && <input id={inputId} className="sr" type="file" accept="image/*" disabled={busy}
-    onChange={(e) => { const f = e.target.files?.[0]; if (f) pick(f); e.target.value = ""; }} />;
+  const onFile = (e: ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) pick(f); e.target.value = ""; };
+  // Two inputs: one opens the camera straight away, the other picks an existing picture.
+  const input = canEdit && <>
+    <input id={inputId + "-cam"} className="sr" type="file" accept="image/*" capture="environment" disabled={busy} onChange={onFile} />
+    <input id={inputId} className="sr" type="file" accept="image/*" disabled={busy} onChange={onFile} />
+  </>;
 
   if (!path) return canEdit ? (
     <div className="dish empty no-print">
-      <label htmlFor={inputId} className={"dish-add" + (busy ? " disabled" : "")}>
+      <div className={"dish-add" + (busy ? " disabled" : "")}>
         <span aria-hidden="true" className="dish-icon">📷</span>
-        <span><strong>{busy ? "Adding photo…" : "Add a photo of the dish"}</strong><br /><span className="muted small">Show what it looks like when it's made</span></span>
-      </label>
+        <span className="dish-add-text"><strong>{busy ? "Adding photo…" : "Add a photo of the dish"}</strong><br /><span className="muted small">Show what it looks like when it's made</span></span>
+        <span className="btns">
+          <label htmlFor={inputId + "-cam"} className="btn small primary">Take a photo</label>
+          <label htmlFor={inputId} className="btn small">Choose a photo</label>
+        </span>
+      </div>
       {input}
       {err && <div className="notice warn">{err}</div>}
     </div>
@@ -56,7 +64,8 @@ export default function DishPhoto({ recipeId, path, canEdit, userId, title, onCh
       <img src={dishUrl(path)} alt={`${title}, finished dish`} loading="lazy" />
       {canEdit && (
         <figcaption className="no-print">
-          <label htmlFor={inputId} className={"btn small" + (busy ? " disabled" : "")}>{busy ? "Saving…" : "Change photo"}</label>
+          <label htmlFor={inputId + "-cam"} className={"btn small" + (busy ? " disabled" : "")}>{busy ? "Saving…" : "Take new photo"}</label>
+          <label htmlFor={inputId} className={"btn small" + (busy ? " disabled" : "")}>Choose photo</label>
           <button className="btn small" disabled={busy} onClick={remove}>Remove</button>
           {input}
         </figcaption>
