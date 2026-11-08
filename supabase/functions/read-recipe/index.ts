@@ -85,7 +85,8 @@ Deno.serve(async (req) => {
     { type: "text", text: text.trim() ? `${PROMPT}\n\nRecipe text:\n${text}` : PROMPT },
   ];
 
-  const client = new Anthropic({ apiKey });
+  // Send the key as "Authorization: Bearer", the documented header for current Console keys.
+  const client = new Anthropic({ apiKey: null, authToken: apiKey });
   try {
     const response = await client.beta.messages.create({
       model: "claude-opus-5-5",
