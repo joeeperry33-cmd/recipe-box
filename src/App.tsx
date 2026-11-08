@@ -30,6 +30,8 @@ export default function App() {
   const s = useStore();
   const [page, id] = useRoute();
   const [wantLogin, setWantLogin] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => { setMenuOpen(false); }, [page, id]);
 
   // After signing in from a shared link, go back to that recipe so it can be saved.
   useEffect(() => {
@@ -70,6 +72,16 @@ export default function App() {
     default: body = <Library />;
   }
 
+  const sections = [
+    { key: "recipes", href: "#/", label: "Recipes", count: <span className="count">{s.recipes.length}</span> },
+    { key: "plan", href: "#/plan", label: "Meal plan", count: <span className="count">{s.plan.length}</span> },
+    { key: "list", href: "#/list", label: "Shopping list", count: <span className="count">{toBuy}</span> },
+    { key: "friends", href: "#/friends", label: "Friends", count: pendingIn > 0 ? <span className="count alert">{pendingIn}</span> : null },
+    // Hidden once the app runs from the home screen, where it's already installed.
+    ...(isInstalled() ? [] : [{ key: "install", href: "#/install", label: "Install app", count: null }]),
+  ];
+  const current = sections.find((x) => x.key === tab) ?? sections[0];
+
   return (
     <>
       <header className="top no-print">
@@ -80,12 +92,20 @@ export default function App() {
             <a className="btn primary small" href="#/add">+ Add recipe</a>
           </div>
           <nav className="tabs" aria-label="Sections">
-            <a href="#/" aria-current={tab === "recipes" ? "page" : undefined}>Recipes <span className="count">{s.recipes.length}</span></a>
-            <a href="#/plan" aria-current={tab === "plan" ? "page" : undefined}>Meal plan <span className="count">{s.plan.length}</span></a>
-            <a href="#/list" aria-current={tab === "list" ? "page" : undefined}>Shopping list <span className="count">{toBuy}</span></a>
-            <a href="#/friends" aria-current={tab === "friends" ? "page" : undefined}>Friends {pendingIn > 0 && <span className="count alert">{pendingIn}</span>}</a>
-            {/* Hidden once the app runs from the home screen, where it's already installed. */}
-            {!isInstalled() && <a href="#/install" aria-current={tab === "install" ? "page" : undefined}>Install app</a>}
+            {sections.map((x) => <a key={x.key} href={x.href} aria-current={tab === x.key ? "page" : undefined}>{x.label} {x.count}</a>)}
+          </nav>
+          {/* On phones the sections are a drop-down menu instead. */}
+          <nav className="menu" aria-label="Sections">
+            <button className="menu-btn" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
+              <span className="burger" aria-hidden="true">☰</span> {current.label} {current.count}
+              {current.key !== "friends" && pendingIn > 0 && <span className="count alert" title="Friends">{pendingIn}</span>}
+              <span className="caret" aria-hidden="true">{menuOpen ? "▲" : "▼"}</span>
+            </button>
+            {menuOpen && (
+              <div className="menu-list">
+                {sections.map((x) => <a key={x.key} href={x.href} aria-current={tab === x.key ? "page" : undefined} onClick={() => setMenuOpen(false)}>{x.label} {x.count}</a>)}
+              </div>
+            )}
           </nav>
         </div>
       </header>

@@ -226,3 +226,14 @@ header.top .wrap{padding-bottom:0}
 .request:first-of-type{border-top:0}
 .addrow select,.day select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 10px;min-width:0;max-width:100%}
 .steps-list{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:6px}
+
+/* Section menu: tabs on wide screens, a drop-down on phones */
+nav.menu{display:none;position:relative;padding-bottom:10px}
+.menu-btn{width:100%;display:flex;align-items:center;gap:8px;min-height:48px;padding:10px 14px;border-radius:12px;border:1.5px solid var(--ink);background:var(--ink);color:var(--bg);font:inherit;font-weight:800;font-size:1.05rem;cursor:pointer;text-align:left}
+.menu-btn .count{background:var(--mustard);color:#1d2a24}
+.menu-btn .caret{margin-left:auto;font-size:.8rem}
+.menu-list{position:absolute;left:0;right:0;top:calc(100% - 4px);background:var(--card,var(--bg));border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px;z-index:10;display:grid}
+.menu-list a{display:flex;align-items:center;gap:8px;min-height:48px;padding:10px 14px;border-radius:10px;text-decoration:none;color:var(--ink);font-weight:700;font-size:1.05rem}
+.menu-list a[aria-current="page"]{background:var(--ink);color:var(--bg)}
+.menu-list a[aria-current="page"] .count{background:var(--mustard);color:#1d2a24}
+@media (max-width:640px){nav.tabs{display:none}nav.menu{display:block}}
