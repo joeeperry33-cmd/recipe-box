@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 import { nameOf, useStore } from "../lib/store";
+import { APP_NAME, openEmail } from "../lib/links";
 
 const RESULT: Record<string, string> = {
-  sent: "Friend request sent.",
+  sent: "Friend request sent. It shows up on their Friends tab the next time they open the app. The app doesn't email them, so you can send a heads-up below.",
   accepted: "They'd already asked you, so you're now friends.",
   exists: "You're already friends, or a request is waiting.",
   self: "That's your own email.",
@@ -15,6 +16,7 @@ export default function Friends() {
   const myId = s.session!.user.id;
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState("");
+  const [sentTo, setSentTo] = useState("");
   const [name, setName] = useState(s.me?.display_name ?? "");
   const [pw, setPw] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -52,10 +54,12 @@ export default function Friends() {
   async function dropRequest(id: string) { await supabase.from("recipe_requests").delete().eq("id", id); s.reload(); }
 
   async function invite(e: FormEvent) {
-    e.preventDefault(); setMsg("");
+    e.preventDefault(); setMsg(""); setSentTo("");
     const { data, error } = await supabase.rpc("send_friend_request", { friend_email: email });
     if (error) { setMsg("Couldn't send that. Try again."); return; }
-    setMsg(RESULT[data as string] ?? "Done."); if (data === "sent" || data === "accepted") { setEmail(""); s.reload(); }
+    setMsg(RESULT[data as string] ?? "Done.");
+    if (data === "sent" || data === "not_found") setSentTo(email.trim());
+    if (data === "sent" || data === "accepted") { setEmail(""); s.reload(); }
   }
   async function accept(id: string) { await supabase.from("friendships").update({ status: "accepted" }).eq("id", id); s.toast("You're now friends"); s.reload(); }
   async function remove(id: string, toast: string) { await supabase.from("friendships").delete().eq("id", id); s.toast(toast); s.reload(); }
@@ -81,7 +85,13 @@ export default function Friends() {
       <form className="form" onSubmit={invite}>
         <div className="field"><label htmlFor="fEmail">Add a friend by email</label>
           <div className="addrow"><input id="fEmail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="friend@example.com" /><button className="btn primary">Send request</button></div></div>
-        {msg && <div className="notice">{msg}</div>}
+        {msg && <div className="notice">{msg}
+          {sentTo && <div className="btns" style={{ marginTop: 8 }}><button type="button" className="btn small primary" onClick={() => openEmail(
+            `Join me on ${APP_NAME}`,
+            `Hi!\n\nI'd like to share recipes with you on ${APP_NAME}.\n\n` +
+            (msg === RESULT.sent ? "I sent you a friend request. Open the app, go to the Friends tab, and tap Accept.\n\n" : "Make a free account with this email address, then I can add you as a friend.\n\n") +
+            `Get the app here:\n${location.origin}/#/install\n\n${nameOf(s.me)}`, sentTo)}>Email them a heads-up</button></div>}
+        </div>}
       </form>
 
       {incoming.length > 0 && (
