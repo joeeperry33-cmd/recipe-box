@@ -21,6 +21,7 @@ export default function AddRecipe() {
   const s = useStore();
   const myId = s.session!.user.id;
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [url, setUrl] = useState(() => { try { const u = sessionStorage.getItem("sharedRecipeUrl") ?? ""; sessionStorage.removeItem("sharedRecipeUrl"); return u; } catch { return ""; } });
   const [text, setText] = useState("");
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
@@ -36,6 +37,18 @@ export default function AddRecipe() {
     for (const f of Array.from(files)) { if (f.type.startsWith("image/") && next.length < MAX_PHOTOS) next.push({ file: f, url: URL.createObjectURL(f) }); }
     if (Array.from(files).length + photos.length > MAX_PHOTOS) setErr(`A recipe can have up to ${MAX_PHOTOS} photos.`); else setErr("");
     setPhotos(next);
+  }
+
+  async function readUrl() {
+    const link = url.trim().match(/https?:\/\/\S+/)?.[0] ?? (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(url.trim()) ? "https://" + url.trim() : "");
+    if (!link) { setErr("Paste the full web address of the recipe page, starting with https://"); return; }
+    setErr(""); setBusy("Getting the recipe from that page… this takes about 20 seconds.");
+    try {
+      const { data, error } = await supabase.functions.invoke("read-recipe", { body: { url: link } });
+      if (error) { setErr(await errorText(error)); return; }
+      setDraft({ ...cleanAiRecipe(data.recipe), photo_paths: [] }); setUrl("");
+    } catch { setErr("Something went wrong reading that page. Try again."); }
+    finally { setBusy(""); }
   }
 
   async function read(fromText: boolean) {
@@ -98,9 +111,20 @@ export default function AddRecipe() {
           </div>
         )}
         {photos.length > 0 && !busy && <button className="btn primary" onClick={() => read(false)}>Read {photos.length > 1 ? "these photos" : "this photo"}</button>}
-        {busy && <div className="status"><span className="spin" />{busy}</div>}
-        {err && <div className="notice warn">{err}</div>}
+        {busy && !url && <div className="status"><span className="spin" />{busy}</div>}
+        {err && !url && <div className="notice warn">{err}</div>}
       </div>
+      <form className="card share-cta" onSubmit={(e) => { e.preventDefault(); readUrl(); }}>
+        <strong>Import from a website</strong>
+        <span className="muted small">Paste the link to a recipe page. Ads and life stories are left out.</span>
+        <div className="addrow" style={{ width: "100%" }}>
+          <label className="sr" htmlFor="recipeUrl">Recipe web address</label>
+          <input id="recipeUrl" type="text" inputMode="url" autoCapitalize="off" autoCorrect="off" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.example.com/best-lasagna" />
+          <button className="btn primary" disabled={!!busy || !url.trim()}>Import</button>
+        </div>
+        {busy && url && <div className="status"><span className="spin" />{busy}</div>}
+        {err && url && <div className="notice warn">{err}</div>}
+      </form>
       <details className="paste">
         <summary>Paste a recipe someone texted or emailed you</summary>
         <div className="field" style={{ marginTop: 10 }}><label htmlFor="pasteText">Recipe text</label>

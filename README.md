@@ -7,6 +7,7 @@ Snap photos of paper recipes and have them read, categorized and saved. Plan a w
 - **Photo import:** take or choose up to 12 photos (pages) per recipe. Claude reads them into a title, ingredients, steps, category, tags and a grocery aisle for each ingredient. You review and fix before saving. You can also paste recipe text or type one in.
 - **Recipe view:** scale servings, tick off ingredients, **Keep screen on** switch (Screen Wake Lock), Big text mode, and **Print** (a clean print layout).
 - **Ratings and favorites:** give any recipe your own 1 to 5 stars and a heart. Filter the box to favorites or sort by rating. Ratings are personal, so friends never see them.
+- **Import from a website:** paste a recipe page link (or share it to the app on Android); the page is fetched and the recipe pulled out.
 - **Email a link:** send a recipe link from your own email. Anyone can read it without an account, then sign up to save it or install the app.
 - **Recipe requests:** ask a friend for a recipe; they answer by sending one of theirs.
 - **Meal plan:** add recipes to days of the week and set servings per meal.
