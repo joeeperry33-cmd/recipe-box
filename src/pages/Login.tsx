@@ -7,6 +7,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showPw, setShowPw] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "warn"; text: string } | null>(null);
 
   async function submit(e: FormEvent) {
@@ -38,7 +39,8 @@ export default function Login() {
         )}
         <div className="field"><label htmlFor="email">Email</label><input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" /></div>
         {mode !== "reset" && (
-          <div className="field"><label htmlFor="pw">Password</label><input id="pw" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "up" ? "new-password" : "current-password"} /></div>
+          <div className="field"><label htmlFor="pw">Password</label><input id="pw" type={showPw ? "text" : "password"} required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "up" ? "new-password" : "current-password"} />
+            <label className="checkrow small"><input type="checkbox" checked={showPw} onChange={(e) => setShowPw(e.target.checked)} /> Show password</label></div>
         )}
         {msg && <div className={"notice" + (msg.kind === "warn" ? " warn" : "")}>{msg.text}</div>}
         <button className="btn primary" disabled={busy}>{busy ? "One moment…" : mode === "in" ? "Sign in" : mode === "up" ? "Create account" : "Send reset link"}</button>

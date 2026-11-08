@@ -17,6 +17,7 @@ export default function Friends() {
   const [msg, setMsg] = useState("");
   const [name, setName] = useState(s.me?.display_name ?? "");
   const [pw, setPw] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [askWho, setAskWho] = useState("");
   const [askWhat, setAskWhat] = useState("");
   const [pick, setPick] = useState<Record<string, string>>({});
@@ -164,7 +165,8 @@ export default function Friends() {
         <div className="field"><label htmlFor="dn">Your name (what friends see)</label><div className="addrow"><input id="dn" value={name} onChange={(e) => setName(e.target.value)} /><button className="btn">Save</button></div></div>
       </form>
       <form className="form" onSubmit={savePw}>
-        <div className="field"><label htmlFor="npw">New password</label><div className="addrow"><input id="npw" type="password" minLength={6} required value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" /><button className="btn">Change password</button></div></div>
+        <div className="field"><label htmlFor="npw">New password</label><div className="addrow"><input id="npw" type={showPw ? "text" : "password"} minLength={6} required value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" /><button className="btn">Change password</button></div>
+          <label className="checkrow small"><input type="checkbox" checked={showPw} onChange={(e) => setShowPw(e.target.checked)} /> Show password</label></div>
       </form>
       <p className="muted small" style={{ margin: 0 }}>Signed in as {s.session!.user.email}</p>
       <div><button className="btn" onClick={() => supabase.auth.signOut()}>Sign out</button></div>
