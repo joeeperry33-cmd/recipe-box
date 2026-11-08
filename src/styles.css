@@ -7,7 +7,7 @@
   --shadow:0 1px 2px rgba(29,42,36,.08),0 4px 14px rgba(29,42,36,.06);
   --f-display:"Bricolage Grotesque",system-ui,sans-serif;
   --f-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-type:"Courier Prime","Courier New",ui-monospace,monospace;
+  --f-type:var(--f-body); /* recipe text uses the same face as the rest of the app */
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#141a17; --card:#1c2420; --ink:#e6ece8; --muted:#9aa9a0; --line:#2e3a34;
