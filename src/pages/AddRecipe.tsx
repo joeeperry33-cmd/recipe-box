@@ -17,6 +17,41 @@ async function errorText(e: unknown): Promise<string> {
   return "Something went wrong reading that. Check your connection and try again.";
 }
 
+type ReaderOut = { recipe?: Parameters<typeof cleanAiRecipe>[0]; error?: string };
+
+/** The reader keeps working even if the phone drops the connection (screen lock, switching apps),
+ *  and saves its result as a draft. So on a dropped connection, wait for that saved result. */
+async function runReader(body: Record<string, unknown>, photoPaths: string[] = []): Promise<ReaderOut> {
+  const draftId = crypto.randomUUID();
+  const { data, error } = await supabase.functions.invoke("read-recipe", { body: { ...body, draft_id: draftId, photo_paths: photoPaths } });
+  if (!error) { supabase.from("recipe_drafts").delete().eq("id", draftId).then(() => {}); return data as ReaderOut; }
+  const isHttp = (error as { context?: Response })?.context && typeof (error as { context?: Response }).context?.json === "function"
+    && (error as { name?: string }).name === "FunctionsHttpError";
+  if (isHttp) { supabase.from("recipe_drafts").delete().eq("id", draftId).then(() => {}); return { error: await errorText(error) }; }
+  const until = Date.now() + 170_000;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 4000));
+    const { data: d } = await supabase.from("recipe_drafts").select("status, recipe, error").eq("id", draftId).maybeSingle();
+    if (d?.status === "done") { await supabase.from("recipe_drafts").delete().eq("id", draftId); return { recipe: d.recipe }; }
+    if (d?.status === "error") { await supabase.from("recipe_drafts").delete().eq("id", draftId); return { error: d.error ?? "Something went wrong reading that. Try again." }; }
+  }
+  return { error: "The connection dropped while reading. If you come back to Add recipe in a minute, it may be waiting for you." };
+}
+
+/** Keeps the screen on while a read runs, so the phone doesn't sleep and cut the connection. */
+function useScreenOn(on: boolean) {
+  useEffect(() => {
+    if (!on || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null; let done = false;
+    const get = () => navigator.wakeLock.request("screen").then((l) => { if (done) l.release(); else lock = l; }).catch(() => {});
+    const onVis = () => { if (document.visibilityState === "visible" && !done) get(); };
+    get(); document.addEventListener("visibilitychange", onVis);
+    return () => { done = true; lock?.release().catch(() => {}); document.removeEventListener("visibilitychange", onVis); };
+  }, [on]);
+}
+
+type Waiting = { id: string; recipe: Parameters<typeof cleanAiRecipe>[0]; photo_paths: string[] };
+
 export default function AddRecipe() {
   const s = useStore();
   const myId = s.session!.user.id;
@@ -27,6 +62,26 @@ export default function AddRecipe() {
   const [err, setErr] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [over, setOver] = useState(false);
+  const [waiting, setWaiting] = useState<Waiting[]>([]);
+  useScreenOn(!!busy);
+
+  // Reads that finished after the app was closed or the connection dropped.
+  useEffect(() => {
+    supabase.from("recipe_drafts").select("id, status, recipe, photo_paths, created_at").order("created_at", { ascending: false }).then(({ data }) => {
+      const old = Date.now() - 10 * 60_000;
+      const rows = (data ?? []) as (Waiting & { status: string; created_at: string })[];
+      // Clear failed and stuck reads; keep finished ones for the person to open.
+      const stale = rows.filter((r) => r.status === "error" || (r.status === "working" && Date.parse(r.created_at) < old));
+      if (stale.length) supabase.from("recipe_drafts").delete().in("id", stale.map((r) => r.id)).then(() => {});
+      setWaiting(rows.filter((r) => r.status === "done" && r.recipe));
+    });
+  }, []);
+
+  function openWaiting(w: Waiting) {
+    supabase.from("recipe_drafts").delete().eq("id", w.id).then(() => {});
+    setWaiting((x) => x.filter((y) => y.id !== w.id));
+    setDraft({ ...cleanAiRecipe(w.recipe), photo_paths: w.photo_paths ?? [] });
+  }
 
   const photosRef = useRef(photos);
   photosRef.current = photos;
@@ -44,9 +99,9 @@ export default function AddRecipe() {
     if (!link) { setErr("Paste the full web address of the recipe page, starting with https://"); return; }
     setErr(""); setBusy("Getting the recipe from that page… this takes about 20 seconds.");
     try {
-      const { data, error } = await supabase.functions.invoke("read-recipe", { body: { url: link } });
-      if (error) { setErr(await errorText(error)); return; }
-      setDraft({ ...cleanAiRecipe(data.recipe), photo_paths: [] }); setUrl("");
+      const out = await runReader({ url: link });
+      if (!out.recipe) { setErr(out.error ?? "Something went wrong reading that page. Try again."); return; }
+      setDraft({ ...cleanAiRecipe(out.recipe), photo_paths: [] }); setUrl("");
     } catch { setErr("Something went wrong reading that page. Try again."); }
     finally { setBusy(""); }
   }
@@ -66,9 +121,10 @@ export default function AddRecipe() {
         const ups = await Promise.all(jpgs.map((b, i) => supabase.storage.from("recipe-photos").upload(`${myId}/${batch}-${i}.jpg`, b, { contentType: "image/jpeg" })));
         paths = ups.filter((u) => !u.error).map((u) => u.data!.path);
       }
-      const { data, error } = await supabase.functions.invoke("read-recipe", { body: fromText ? { text } : { images } });
-      if (error) { setErr(await errorText(error)); if (paths.length) supabase.storage.from("recipe-photos").remove(paths); return; }
-      setDraft({ ...cleanAiRecipe(data.recipe), photo_paths: paths });
+      setBusy(fromText ? "Reading the recipe…" : `Reading ${photos.length > 1 ? photos.length + " pages" : "your recipe"}… this can take up to a minute. The screen stays on until it's done.`);
+      const out = await runReader(fromText ? { text } : { images }, paths);
+      if (!out.recipe) { setErr(out.error ?? "Something went wrong reading that. Try again."); if (paths.length) supabase.storage.from("recipe-photos").remove(paths); return; }
+      setDraft({ ...cleanAiRecipe(out.recipe), photo_paths: paths });
     } catch {
       setErr("That photo couldn't be opened. Try a different photo.");
     } finally { setBusy(""); }
@@ -93,6 +149,12 @@ export default function AddRecipe() {
   return (
     <div className="section">
       <h2>Add a recipe</h2>
+      {waiting.map((w) => (
+        <div key={w.id} className="notice">
+          <strong>{String(w.recipe?.title || "A recipe")}</strong> finished reading while you were away.{" "}
+          <button className="btn small primary" onClick={() => openWaiting(w)}>Review and save</button>
+        </div>
+      ))}
       <div className={"drop" + (over ? " over" : "")} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={onDrop}>
         <strong>Snap or upload your recipe</strong>
         <span className="muted" style={{ fontSize: ".92rem" }}>Handwritten cards and cookbook pages both work. Add up to {MAX_PHOTOS} photos if it continues on the back or more pages, in page order.</span>

@@ -114,6 +114,8 @@ function pageToText(html: string): string {
 }
 
 type ImageIn = { media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; data: string };
+type Result = { status: number; body: { recipe?: unknown; error?: string } };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -131,8 +133,33 @@ Deno.serve(async (req) => {
   if (limitErr) { console.error(limitErr); return json({ error: "Something went wrong. Try again." }, 500); }
   if (!allowed) return json({ error: `You've read ${DAILY_LIMIT} recipes today. Try again tomorrow, or type this one in by hand.` }, 429);
 
-  let body: { images?: ImageIn[]; text?: string; url?: string };
+  let body: { images?: ImageIn[]; text?: string; url?: string; draft_id?: string; photo_paths?: string[] };
   try { body = await req.json(); } catch { return json({ error: "Bad request" }, 400); }
+
+  // Phones often drop the connection while a long read runs (screen locks, app goes to the background).
+  // With a draft_id, the read keeps going and the result is saved so the app can pick it up later.
+  const uid = who.user.id;
+  const draftId = typeof body.draft_id === "string" && UUID.test(body.draft_id) ? body.draft_id : "";
+  const paths = (body.photo_paths ?? []).filter((x) => typeof x === "string" && x.startsWith(uid + "/")).slice(0, MAX_IMAGES);
+  if (draftId) {
+    const { error } = await admin.from("recipe_drafts").insert({ id: draftId, user_id: uid, photo_paths: paths });
+    if (error) console.error("draft insert", error.message);
+  }
+  const work = readRecipe(body).catch((e): Result => { console.error(e); return { status: 502, body: { error: "Something went wrong reading that. Try again." } }; }).then(async (r) => {
+    if (draftId) {
+      const { error } = await admin.from("recipe_drafts").update(r.status === 200 ? { status: "done", recipe: r.body.recipe } : { status: "error", error: r.body.error ?? "Something went wrong." }).eq("id", draftId).eq("user_id", uid);
+      if (error) console.error("draft update", error.message);
+    }
+    return r;
+  });
+  (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime?.waitUntil(work);
+  const r = await work;
+  return json(r.body, r.status);
+});
+
+async function readRecipe(body: { images?: ImageIn[]; text?: string; url?: string }): Promise<Result> {
+  const json = (b: Result["body"], status = 200): Result => ({ status, body: b });
+  const apiKey = (Deno.env.get("ANTHROPIC_API_KEY") ?? "").trim().replace(/^["']|["']$/g, "");
   const images = (body.images ?? []).slice(0, MAX_IMAGES);
   let text = (body.text ?? "").slice(0, 20000);
   let site = "";
@@ -181,4 +208,4 @@ Deno.serve(async (req) => {
     console.error(e);
     return json({ error: "Something went wrong reading that. Try again." }, 502);
   }
-});
+}
