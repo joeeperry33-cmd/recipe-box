@@ -18,25 +18,37 @@ function AiPlanner() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [sug, setSug] = useState<Suggestion | null>(null);
+  const [change, setChange] = useState("");
+  const [editingCurrent, setEditingCurrent] = useState(false); // the suggestion is a change to the plan already in use
+  const mineSorted = [...s.recipes].filter((r) => friends || r.owner_id === myId).sort((a, b) => a.title.localeCompare(b.title));
   const hasFriendRecipes = s.recipes.some((r) => r.owner_id !== myId);
 
-  async function make() {
-    setBusy(true); setErr(""); setSug(null);
-    const ids = s.recipes.filter((r) => friends || r.owner_id === myId).map((r) => r.id);
-    const { data, error } = await supabase.functions.invoke("plan-week", { body: { recipe_ids: ids, days, notes } });
+  async function make(revise?: { current: { day: string; recipe_id: string }[]; change: string }) {
+    setBusy(true); setErr("");
+    const ids = [...new Set([...s.recipes.filter((r) => friends || r.owner_id === myId).map((r) => r.id), ...(revise?.current.map((p) => p.recipe_id) ?? [])])];
+    const { data, error } = await supabase.functions.invoke("plan-week", { body: { recipe_ids: ids, days, notes, ...revise } });
     setBusy(false);
     if (error) {
       let t = "Something went wrong making the plan. Try again.";
       try { const j = await (error as { context?: Response }).context?.json(); if (j?.error) t = j.error; } catch { /* not json */ }
       setErr(t); return;
     }
-    setSug(data as Suggestion);
+    setSug(data as Suggestion); setChange("");
   }
+  const reviseSuggestion = () => sug && change.trim() && make({ current: sug.plan, change: change.trim() });
+  function reviseCurrent() {
+    if (!change.trim()) return;
+    const current = s.plan.filter((e) => days.includes(e.day) && s.recipeMap.has(e.recipe_id)).map((e) => ({ day: e.day, recipe_id: e.recipe_id }));
+    setEditingCurrent(true); make({ current, change: change.trim() });
+  }
+  // Hand edits to the suggestion before using it.
+  const setPick = (i: number, recipe_id: string) => sug && setSug({ ...sug, plan: sug.plan.map((p, j) => (j === i ? { ...p, recipe_id, reason: "your pick" } : p)) });
+  const dropPick = (i: number) => sug && setSug({ ...sug, plan: sug.plan.filter((_, j) => j !== i) });
   function use(replace: boolean) {
     if (!sug) return;
     const keep = replace ? s.plan.filter((e) => !days.includes(e.day)) : s.plan;
     const add = sug.plan.map((p) => ({ id: uid(), recipe_id: p.recipe_id, day: p.day, servings: Number(s.recipeMap.get(p.recipe_id)?.servings) || null }));
-    s.setPlan([...keep, ...add]); setSug(null); setOpen(false); s.toast("Meal plan updated");
+    s.setPlan([...keep, ...add]); setSug(null); setOpen(false); setEditingCurrent(false); s.toast("Meal plan updated");
   }
 
   if (!open) return (
@@ -59,23 +71,43 @@ function AiPlanner() {
           <input id="aiNotes" value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. quick on weeknights, no fish, use up chicken" /></div>
         {hasFriendRecipes && <label className="checkrow small"><input type="checkbox" checked={friends} onChange={(e) => setFriends(e.target.checked)} /> Include recipes friends shared with me</label>}
         <div className="btns">
-          <button className="btn primary" disabled={busy || !days.length} onClick={make}>{busy ? "Planning…" : "Make my plan"}</button>
+          <button className="btn primary" disabled={busy || !days.length} onClick={() => { setEditingCurrent(false); make(); }}>{busy ? "Planning…" : "Make a new plan"}</button>
           <button className="btn" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
         </div>
+        {s.plan.some((e) => days.includes(e.day)) && (
+          <form className="field" onSubmit={(e) => { e.preventDefault(); reviseCurrent(); }}>
+            <label htmlFor="aiChangeNow" className="small">Or change the plan you have now</label>
+            <div className="addrow"><input id="aiChangeNow" value={change} maxLength={500} onChange={(e) => setChange(e.target.value)} placeholder="e.g. swap Tuesday for something lighter" />
+              <button className="btn" disabled={busy || !change.trim()}>Change it</button></div>
+          </form>
+        )}
         {busy && <div className="status"><span className="spin" />Looking through your recipes… this takes about 20 seconds.</div>}
       </>}
       {err && <div className="notice warn">{err}</div>}
       {sug && <>
         <p style={{ margin: 0 }}>{sug.summary}</p>
-        <div>{WEEK.filter((d) => sug.plan.some((p) => p.day === d)).map((d) => sug.plan.filter((p) => p.day === d).map((p, i) => {
-          const r = s.recipeMap.get(p.recipe_id);
-          return r && <div className="pentry" key={d + i}><span className="t"><strong>{d}:</strong> <a href={"#/r/" + r.id}>{r.title}</a> <span className="muted small">{p.reason}</span></span></div>;
-        }))}</div>
+        <div>{sug.plan.map((p, i) => ({ p, i })).sort((a, b) => WEEK.indexOf(a.p.day) - WEEK.indexOf(b.p.day)).map(({ p, i }) => (
+          <div className="pentry sug" key={i}>
+            <strong className="sug-day">{p.day}</strong>
+            <select aria-label={"Recipe for " + p.day} value={p.recipe_id} onChange={(e) => setPick(i, e.target.value)}>
+              {!s.recipeMap.has(p.recipe_id) && <option value={p.recipe_id}>?</option>}
+              {(mineSorted.some((r) => r.id === p.recipe_id) ? mineSorted : [s.recipeMap.get(p.recipe_id)!, ...mineSorted].filter(Boolean)).map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
+            </select>
+            <button className="iconbtn" onClick={() => dropPick(i)} aria-label={"Remove " + p.day}>Remove</button>
+            <span className="muted small sug-why">{p.reason}</span>
+          </div>
+        ))}</div>
+        <form className="field" onSubmit={(e) => { e.preventDefault(); reviseSuggestion(); }}>
+          <label htmlFor="aiChange" className="small">Want changes? Tell it what to change</label>
+          <div className="addrow"><input id="aiChange" value={change} maxLength={500} onChange={(e) => setChange(e.target.value)} placeholder="e.g. no pasta, swap Friday for pizza night" />
+            <button className="btn" disabled={busy || !change.trim()}>{busy ? "Updating…" : "Update plan"}</button></div>
+        </form>
+        {busy && <div className="status"><span className="spin" />Updating the plan…</div>}
         <div className="btns">
-          <button className="btn primary" onClick={() => use(true)}>Use this plan</button>
-          {s.plan.some((e) => days.includes(e.day)) && <button className="btn" onClick={() => use(false)}>Add to what I have</button>}
-          <button className="btn" disabled={busy} onClick={make}>{busy ? "Planning…" : "Try again"}</button>
-          <button className="btn ghost" onClick={() => { setSug(null); setOpen(false); }}>Cancel</button>
+          <button className="btn primary" disabled={busy || !sug.plan.length} onClick={() => use(true)}>{editingCurrent ? "Save changes" : "Use this plan"}</button>
+          {!editingCurrent && s.plan.some((e) => days.includes(e.day)) && <button className="btn" disabled={busy} onClick={() => use(false)}>Add to what I have</button>}
+          {!editingCurrent && <button className="btn" disabled={busy} onClick={() => make()}>Start over</button>}
+          <button className="btn ghost" onClick={() => { setSug(null); setOpen(false); setEditingCurrent(false); }}>Cancel</button>
         </div>
       </>}
     </div>

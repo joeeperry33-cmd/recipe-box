@@ -252,3 +252,7 @@ nav.menu{display:none;position:relative;padding-bottom:10px}
 @media print{.dish img{max-height:260px}}
 .ai-plan .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 .chip-check{border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+.pentry.sug{flex-wrap:wrap}
+.sug-day{min-width:96px}
+.pentry.sug select{flex:1;min-width:0}
+.sug-why{flex-basis:100%}

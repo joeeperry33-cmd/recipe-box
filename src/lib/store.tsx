@@ -67,6 +67,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const userId = session?.user.id;
+  const dirty = useRef<Record<string, boolean>>({});
   const reload = useCallback(async () => {
     if (!userId) return;
     setLoading(true); setError("");
@@ -90,8 +91,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setShares((sh.data ?? []) as Share[]);
     setRequests((rq.data ?? []) as RecipeRequest[]);
     setMarks(new Map((mk.data ?? []).map((m) => [m.recipe_id as string, { rating: m.rating as number | null, favorite: !!m.favorite }])));
-    if (pl.data) setPlanState(pl.data.entries as PlanEntry[]);
-    if (li.data) setListState(li.data.items as ListItem[]);
+    // Don't overwrite changes made on this phone that haven't finished saving yet.
+    if (pl.data && !dirty.current.meal_plans) setPlanState(pl.data.entries as PlanEntry[]);
+    if (li.data && !dirty.current.shopping_lists) setListState(li.data.items as ListItem[]);
     setLoading(false);
   }, [userId]);
 
@@ -107,10 +109,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const saveTimers = useRef<Record<string, number>>({});
   const save = useCallback((table: "meal_plans" | "shopping_lists", field: "entries" | "items", value: unknown) => {
     if (!userId) return;
+    dirty.current[table] = true;
     window.clearTimeout(saveTimers.current[table]);
-    saveTimers.current[table] = window.setTimeout(async () => {
+    const mine = saveTimers.current[table] = window.setTimeout(async () => {
       const { error } = await supabase.from(table).upsert({ user_id: userId, [field]: value, updated_at: new Date().toISOString() });
       if (error) toast("Couldn't save. Check your connection.");
+      // Done only if nothing newer was queued while this one saved.
+      else if (saveTimers.current[table] === mine) dirty.current[table] = false;
     }, 600);
   }, [userId, toast]);
   const setPlan = useCallback((p: PlanEntry[]) => { setPlanState(p); save("meal_plans", "entries", p); }, [save]);
