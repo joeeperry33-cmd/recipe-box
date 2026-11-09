@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { useStore } from "../lib/store";
 import { blobToBase64, photoToJpeg } from "../lib/images";
 import { FILE_ACCEPT, readRecipeFile } from "../lib/files";
+import { DAILY_AI_LIMIT, limitNote, withLimitNote } from "../lib/links";
 import { cleanAiRecipe, uid, type Recipe } from "../lib/recipes";
 import RecipeForm, { type Draft } from "./RecipeForm";
 import { go } from "../App";
@@ -72,7 +73,8 @@ export default function AddRecipe() {
   const [url, setUrl] = useState(() => { try { const u = sessionStorage.getItem("sharedRecipeUrl") ?? ""; sessionStorage.removeItem("sharedRecipeUrl"); return u; } catch { return ""; } });
   const [text, setText] = useState("");
   const [busy, setBusy] = useState("");
-  const [err, setErr] = useState("");
+  const [err, setErrRaw] = useState("");
+  const setErr = (m: string) => setErrRaw(withLimitNote(m));
   const [draft, setDraft] = useState<Draft | null>(null);
   const [over, setOver] = useState(false);
   const [waiting, setWaiting] = useState<Waiting[]>([]);
@@ -164,7 +166,7 @@ export default function AddRecipe() {
           const out = await runReader(skip ? { ...req, skip } : req, round === 0 ? paths : []);
           if (!out.recipe) {
             if (!skip) { failed.push(`${f.name}: ${out.error ?? "couldn't be read."}`); if (paths.length) supabase.storage.from("recipe-photos").remove(paths); }
-            if (out.error && /today/.test(out.error)) stopRef.current = true; // hit the daily limit
+            if (out.error && /today/.test(out.error)) { stopRef.current = true; failed.push(limitNote); } // hit the daily limit
             break;
           }
           const list = out.recipes ?? [out.recipe];
@@ -316,6 +318,7 @@ export default function AddRecipe() {
   return (
     <div className="section">
       <h2>Add a recipe</h2>
+      <p className="muted small" style={{ margin: 0 }}>Each account can have up to {DAILY_AI_LIMIT} recipes read by AI a day (photos, files, links and pasted text). {limitNote}</p>
       {waiting.map((w) => (
         <div key={w.id} className="notice">
           <strong>{String(w.recipe?.title || "A recipe")}</strong> finished reading while you were away.{" "}

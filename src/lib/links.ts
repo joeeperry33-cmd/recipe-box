@@ -23,3 +23,10 @@ export const shareEmailBody = (title: string, url: string, from: string) =>
 const PENDING = "pendingShareLink";
 export const rememberPending = (token: string) => { try { localStorage.setItem(PENDING, token); } catch { /* private mode */ } };
 export const takePending = () => { try { const t = localStorage.getItem(PENDING); localStorage.removeItem(PENDING); return t; } catch { return null; } };
+
+/** Where people ask for help, such as a higher daily limit. Set to an email address to show a link. */
+export const SUPPORT_EMAIL = "";
+export const DAILY_AI_LIMIT = 40;
+export const limitNote = `Need more than ${DAILY_AI_LIMIT} a day? Contact support${SUPPORT_EMAIL ? " at " + SUPPORT_EMAIL : ""} to have your limit raised.`;
+/** Adds the support note to the daily-limit error from the AI functions. */
+export const withLimitNote = (msg: string) => (/today/i.test(msg) && /\b40\b/.test(msg) ? `${msg} ${limitNote}` : msg);

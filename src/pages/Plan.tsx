@@ -3,6 +3,7 @@ import { DAYS, buildList, uid } from "../lib/recipes";
 import { useStore } from "../lib/store";
 import { go } from "../App";
 import { supabase } from "../lib/supabase";
+import { withLimitNote } from "../lib/links";
 
 const WEEK = DAYS.filter((d) => d !== "Anytime");
 type Suggestion = { plan: { day: string; recipe_id: string; reason: string }[]; summary: string };
@@ -31,7 +32,7 @@ function AiPlanner() {
     if (error) {
       let t = "Something went wrong making the plan. Try again.";
       try { const j = await (error as { context?: Response }).context?.json(); if (j?.error) t = j.error; } catch { /* not json */ }
-      setErr(t); return;
+      setErr(withLimitNote(t)); return;
     }
     setSug(data as Suggestion); setChange("");
   }
