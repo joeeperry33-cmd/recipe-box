@@ -205,6 +205,7 @@ export default function Friends() {
       </div>
 
       <h2 style={{ marginTop: 12 }}>Your account</h2>
+      <a className="btn" href="#/stats">📊 My cooking stats</a>
       <form className="form" onSubmit={saveName}>
         <div className="field"><label htmlFor="dn">Your name (what friends see)</label><div className="addrow"><input id="dn" value={name} onChange={(e) => setName(e.target.value)} /><button className="btn">Save</button></div></div>
       </form>

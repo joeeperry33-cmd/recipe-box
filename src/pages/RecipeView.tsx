@@ -1,5 +1,6 @@
 import { alertFriend } from "../lib/push";
 import DishPhoto from "../components/DishPhoto";
+import MadeIt from "../components/MadeIt";
 import { useEffect, useRef, useState } from "react";
 import { fmtQty, normUnit, recipeText, uid, unitFor, type Recipe } from "../lib/recipes";
 import { supabase } from "../lib/supabase";
@@ -37,6 +38,7 @@ export default function RecipeView({ id }: { id: string }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [made, setMade] = useState(false);
   const failRef = useRef((m: string) => { s.toast(m); setAwake(false); });
   useWakeLock(awake, failRef.current);
 
@@ -133,6 +135,7 @@ export default function RecipeView({ id }: { id: string }) {
           <label className="switch"><input type="checkbox" checked={awake} onChange={(e) => { setAwake(e.target.checked); if (e.target.checked) s.toast("Screen will stay on while this recipe is open."); }} /> Keep screen on</label>
           <label className="switch"><input type="checkbox" checked={big} onChange={(e) => setBig(e.target.checked)} /> Big text</label>
           <button className={"btn" + (planned ? " inplan" : "")} onClick={togglePlan}>{planned ? "✓ In meal plan" : "+ Add to meal plan"}</button>
+          <button className="btn" onClick={() => setMade((v) => !v)} aria-expanded={made}>🍳 I made this</button>
           <button className="btn" onClick={() => window.print()}>Print</button>
           {mine && <button className="btn" onClick={() => setSharing((v) => !v)} aria-expanded={sharing}>Share with friends</button>}
           {mine && <button className="btn" onClick={emailLink} title={`Opens your email with a link to this recipe and to ${APP_NAME}`}>Email a link</button>}
@@ -149,6 +152,7 @@ export default function RecipeView({ id }: { id: string }) {
             <button className="btn small" onClick={() => setConfirmDel(false)}>Keep it</button>
           </div></div>
         )}
+        {made && <div className="no-print"><MadeIt recipe={r} onCancel={() => setMade(false)} onDone={() => setMade(false)} /></div>}
         {sharing && mine && (
           <div className="pad no-print"><div className="sharebox">
             {friends.length === 0 ? (

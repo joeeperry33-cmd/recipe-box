@@ -45,7 +45,7 @@ export default function DishPhoto({ recipeId, path, canEdit, userId, title, onCh
   </>;
 
   if (!path) return canEdit ? (
-    <div className="dish empty no-print">
+    <div className="dish-none no-print">
       <div className={"dish-add" + (busy ? " disabled" : "")}>
         <span aria-hidden="true" className="dish-icon">📷</span>
         <span className="dish-add-text"><strong>{busy ? "Adding photo…" : "Add a photo of the dish"}</strong><br /><span className="muted small">Show what it looks like when it's made</span></span>

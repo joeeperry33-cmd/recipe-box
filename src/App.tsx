@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useStore } from "./lib/store";
 import Login from "./pages/Login";
 import Welcome from "./pages/Welcome";
+import Feed from "./pages/Feed";
+import Stats from "./pages/Stats";
 import Library from "./pages/Library";
 import RecipeView from "./pages/RecipeView";
 import RecipeEdit from "./pages/RecipeEdit";
@@ -57,7 +59,7 @@ export default function App() {
   const pendingIn = s.friendships.filter((f) => f.status === "pending" && f.addressee === myId).length
     + s.requests.filter((r) => r.status === "open" && r.to_user === myId).length;
   const toBuy = s.list.filter((i) => !i.have && !i.got).length;
-  const tab = ["plan", "list", "friends", "install"].includes(page) ? page : "recipes";
+  const tab = ["plan", "list", "friends", "install", "feed"].includes(page) ? page : page === "stats" ? "friends" : "recipes";
 
   let body;
   switch (page) {
@@ -67,6 +69,8 @@ export default function App() {
     case "plan": body = <Plan />; break;
     case "list": body = <ShoppingList />; break;
     case "friends": body = <Friends />; break;
+    case "feed": body = <Feed />; break;
+    case "stats": body = <Stats />; break;
     case "s": body = <SharedRecipe token={id} />; break;
     case "install": body = <Install signedIn />; break;
     default: body = <Library />;
@@ -76,6 +80,7 @@ export default function App() {
     { key: "recipes", href: "#/", label: "Recipes", count: <span className="count">{s.recipes.length}</span> },
     { key: "plan", href: "#/plan", label: "Meal plan", count: <span className="count">{s.plan.length}</span> },
     { key: "list", href: "#/list", label: "Shopping list", count: <span className="count">{toBuy}</span> },
+    { key: "feed", href: "#/feed", label: "Feed", count: null },
     { key: "friends", href: "#/friends", label: "Friends", count: pendingIn > 0 ? <span className="count alert">{pendingIn}</span> : null },
     // Hidden once the app runs from the home screen, where it's already installed.
     ...(isInstalled() ? [] : [{ key: "install", href: "#/install", label: "Install app", count: null }]),
