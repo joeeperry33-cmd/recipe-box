@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { CATEGORIES, ingText, uid } from "../lib/recipes";
 import { nameOf, useStore } from "../lib/store";
 import { Heart, StarsShown } from "../components/Marks";
+import Roulette from "../components/Roulette";
 
 export default function Library() {
   const s = useStore();
@@ -48,6 +49,7 @@ export default function Library() {
       </div>
       {pool.length > 0 && (
         <div className="filters">
+          <Roulette pool={cat === "All" && !favOnly && !q.trim() ? pool : shown} />
           <button className="chip" aria-pressed={favOnly} onClick={() => setFavOnly((v) => !v)}>♥ Favorites</button>
           <label className="sortby">Sort <select value={sort} onChange={(e) => setSort(e.target.value as "name" | "rating")}><option value="name">A to Z</option><option value="rating">Highest rated</option></select></label>
         </div>

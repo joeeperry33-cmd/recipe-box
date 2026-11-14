@@ -4,6 +4,7 @@ import { useStore } from "../lib/store";
 import { go } from "../App";
 import { supabase } from "../lib/supabase";
 import { withLimitNote } from "../lib/links";
+import Roulette from "../components/Roulette";
 
 const WEEK = DAYS.filter((d) => d !== "Anytime");
 type Suggestion = { plan: { day: string; recipe_id: string; reason: string }[]; summary: string };
@@ -140,6 +141,7 @@ export default function Plan() {
         <div className="btns">
           <button className="btn primary" disabled={!entries.length} onClick={makeList}>Make shopping list</button>
           {entries.length > 0 && <button className="btn" onClick={() => s.setPlan([])}>Clear week</button>}
+          <Roulette pool={s.recipes} label="🎲 Can't decide?" />
         </div>
       </div>
       {rs.length === 0 ? (
