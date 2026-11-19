@@ -19,6 +19,7 @@ export default function Library() {
   const pool = whose === "mine" ? mine : theirs;
   const cats = ["All", ...CATEGORIES.filter((c) => pool.some((r) => r.category === c))];
   const planned = new Set(s.plan.map((e) => e.recipe_id));
+  const saved = new Set(mine.map((r) => r.copied_from).filter(Boolean));
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -76,7 +77,7 @@ export default function Library() {
                     <div className="cat">{r.category}</div>
                     <h3>{r.title}</h3>
                     <StarsShown rating={s.marks.get(r.id)?.rating} />
-                    {r.owner_id !== myId && <div className="by">from {nameOf(s.people.get(r.owner_id))}</div>}
+                    {r.owner_id !== myId && <div className="by">from {nameOf(s.people.get(r.owner_id))}{saved.has(r.id) ? " · ✓ saved to my box" : ""}</div>}
                   </div>
                   <div className="lines">
                     {(r.ingredients || []).slice(0, 3).map((g, i) => <span key={i}>{ingText(g)}</span>)}
