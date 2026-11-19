@@ -4,6 +4,8 @@ import { nameOf, useStore } from "../lib/store";
 import MadeIt, { type Meal } from "../components/MadeIt";
 import { dishUrl } from "../components/DishPhoto";
 import { alertFriend } from "../lib/push";
+import { myCopyOf, saveCopy } from "../lib/copy";
+import { go } from "../App";
 
 const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
 function when(day: string) {
@@ -22,6 +24,7 @@ export default function Feed() {
   const [span, setSpan] = useState(7);
   const [posting, setPosting] = useState(false);
   const [asked, setAsked] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState<string | null>(null);
   const hasFriends = s.friendships.some((f) => f.status === "accepted");
 
   useEffect(() => {
@@ -44,6 +47,16 @@ export default function Feed() {
     setAsked((x) => new Set(x).add(m.id)); s.toast("Asked " + nameOf(s.people.get(m.user_id)) + " for the recipe");
   }
 
+  async function save(m: Meal) {
+    const r = m.recipe_id ? s.recipeMap.get(m.recipe_id) : undefined;
+    if (!r) return;
+    setSaving(m.id);
+    const copy = await saveCopy(r, r.id, nameOf(s.people.get(r.owner_id)), myId);
+    setSaving(null);
+    if (!copy) { s.toast("Couldn't save. Try again."); return; }
+    s.upsertRecipeLocal(copy); s.toast("Saved to your recipe box");
+  }
+
   return (
     <div className="section">
       <div className="titlebar">
@@ -59,6 +72,8 @@ export default function Feed() {
           {meals.map((m) => {
             const mine = m.user_id === myId;
             const r = m.recipe_id ? s.recipeMap.get(m.recipe_id) : undefined;
+            const theirs = !!r && r.owner_id !== myId;
+            const myCopy = theirs ? myCopyOf(s.recipes, r!.id, myId) : undefined;
             return (
               <article className="card post" key={m.id}>
                 <div className="post-head">
@@ -69,6 +84,8 @@ export default function Feed() {
                 {m.photo && <img className="post-photo" src={dishUrl(m.photo)} alt={m.title} loading="lazy" />}
                 {m.comment && <p className="post-comment">{m.comment}</p>}
                 <div className="btns">
+                  {theirs && (myCopy ? <button className="btn small inplan" onClick={() => go("r/" + myCopy.id)}>✓ In my box</button>
+                    : <button className="btn small primary" disabled={saving === m.id} onClick={() => save(m)}>{saving === m.id ? "Saving…" : "Save to my box"}</button>)}
                   {!mine && !r && (asked.has(m.id) ? <span className="muted small">Asked for the recipe</span> : <button className="btn small" onClick={() => ask(m)}>Ask for this recipe</button>)}
                   {mine && <button className="btn small ghost" onClick={() => remove(m)}>Delete</button>}
                 </div>

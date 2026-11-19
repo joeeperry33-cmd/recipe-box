@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { fmtQty, ingText, type Ingredient } from "../lib/recipes";
 import { useStore } from "../lib/store";
+import { myCopyOf, saveCopy } from "../lib/copy";
 import { APP_NAME, rememberPending } from "../lib/links";
 import { go } from "../App";
 import InstallHelp from "../components/InstallHelp";
@@ -28,14 +29,16 @@ export default function SharedRecipe({ token, onSignIn }: { token: string; onSig
       {signedIn ? <a className="btn" href="#/">Go to my recipes</a> : <button className="btn primary" onClick={onSignIn}>Sign in or create an account</button>}</div>
   );
 
-  const already = signedIn && s.recipes.find((x) => x.id === r.recipe_id || (x.copied_from === r.recipe_id && x.owner_id === s.session!.user.id));
+  const myId = s.session?.user.id ?? "";
+  const own = signedIn ? s.recipes.find((x) => x.id === r.recipe_id && x.owner_id === myId) : undefined;
+  const already = signedIn ? own ?? myCopyOf(s.recipes, r.recipe_id, myId) : undefined;
   async function save() {
     setSaving(true);
     const { recipe_id, shared_by, ...fields } = r!;
-    const { data, error } = await supabase.from("recipes").insert({ ...fields, source: fields.source || shared_by, copied_from: recipe_id }).select().single();
+    const copy = await saveCopy(fields, recipe_id, shared_by, myId);
     setSaving(false);
-    if (error || !data) { s.toast("Couldn't save. Try again."); return; }
-    s.upsertRecipeLocal(data); s.toast("Saved to your recipe box"); go("r/" + data.id);
+    if (!copy) { s.toast("Couldn't save. Try again."); return; }
+    s.upsertRecipeLocal(copy); s.toast("Saved to your recipe box"); go("r/" + copy.id);
   }
 
   return (

@@ -7,6 +7,7 @@ import { supabase } from "../lib/supabase";
 import { nameOf, useStore } from "../lib/store";
 import { go } from "../App";
 import { Heart, Stars } from "../components/Marks";
+import { myCopyOf, saveCopy } from "../lib/copy";
 import { APP_NAME, openEmail, recipeLink, shareEmailBody } from "../lib/links";
 
 function useWakeLock(on: boolean, onFail: (msg: string) => void) {
@@ -39,6 +40,7 @@ export default function RecipeView({ id }: { id: string }) {
   const [sharing, setSharing] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
   const [made, setMade] = useState(false);
+  const [saving, setSaving] = useState(false);
   const failRef = useRef((m: string) => { s.toast(m); setAwake(false); });
   useWakeLock(awake, failRef.current);
 
@@ -50,6 +52,8 @@ export default function RecipeView({ id }: { id: string }) {
   if (!r) return <div className="section"><p className="muted">{s.loading ? "Loading recipe…" : "This recipe isn't in your box any more."}</p><a className="btn" href="#/">Back to recipes</a></div>;
 
   const mine = r.owner_id === myId;
+  const myCopy = mine ? undefined : myCopyOf(s.recipes, r.id, myId);
+  const savedFrom = mine && r.copied_from ? s.recipeMap.get(r.copied_from) : undefined;
   const base = Number(r.servings) || 0;
   const servings = serv ?? base;
   const mult = base ? servings / base : 1;
@@ -69,10 +73,11 @@ export default function RecipeView({ id }: { id: string }) {
     s.removeRecipeLocal(r!.id); s.toast("Recipe deleted"); go("");
   }
   async function copyToMine() {
-    const { id: _i, owner_id: _o, created_at: _c, updated_at: _u, ...rest } = r!;
-    const { data, error } = await supabase.from("recipes").insert({ ...rest, photo_paths: [], copied_from: r!.id }).select().single();
-    if (error || !data) { s.toast("Couldn't save a copy. Try again."); return; }
-    s.upsertRecipeLocal(data as Recipe); s.toast("Saved to your recipe box"); go("r/" + data.id);
+    setSaving(true);
+    const copy = await saveCopy(r!, r!.id, nameOf(s.people.get(r!.owner_id)), myId);
+    setSaving(false);
+    if (!copy) { s.toast("Couldn't save a copy. Try again."); return; }
+    s.upsertRecipeLocal(copy); s.toast("Saved to your recipe box. You can change your copy any way you like."); go("r/" + copy.id);
   }
   async function toggleShare(friendId: string) {
     if (sharedWith.has(friendId)) {
@@ -127,6 +132,7 @@ export default function RecipeView({ id }: { id: string }) {
             {base > 0 && <span>Serves {base}</span>}
             {r.source && <span>From {r.source}</span>}
             {!mine && <span>Shared by {nameOf(s.people.get(r.owner_id))}</span>}
+            {savedFrom && savedFrom.owner_id !== myId && <span>Saved from <a href={"#/r/" + savedFrom.id}>{nameOf(s.people.get(savedFrom.owner_id))}'s recipe</a></span>}
           </div>
           <div className="markrow no-print"><Stars recipeId={r.id} title={r.title} /><Heart recipeId={r.id} title={r.title} withText /></div>
           {r.tags?.length > 0 && <div className="chips">{r.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</div>}
@@ -141,7 +147,8 @@ export default function RecipeView({ id }: { id: string }) {
           {mine && <button className="btn" onClick={emailLink} title={`Opens your email with a link to this recipe and to ${APP_NAME}`}>Email a link</button>}
           {mine && <button className="btn" onClick={copyLink}>Copy link</button>}
           <button className="btn" onClick={shareSheet}>Send as text</button>
-          {!mine && <button className="btn primary" onClick={copyToMine}>Save a copy to my box</button>}
+          {!mine && (myCopy ? <a className="btn inplan" href={"#/r/" + myCopy.id}>✓ In my box: open my copy</a>
+            : <button className="btn primary" disabled={saving} onClick={copyToMine}>{saving ? "Saving…" : "Save to my recipe box"}</button>)}
           {mine && <a className="btn" href={"#/edit/" + r.id}>Edit</a>}
           {mine && <button className="btn danger" onClick={() => setConfirmDel(true)}>Delete</button>}
         </div>
