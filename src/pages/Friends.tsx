@@ -1,3 +1,4 @@
+import { saveCopy } from "../lib/copy";
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 import { nameOf, useStore } from "../lib/store";
@@ -28,6 +29,8 @@ export default function Friends() {
   const [push, setPush] = useState<PushState | null>(null);
   const [sending, setSending] = useState(false);
   useEffect(() => { pushState().then(setPush); }, []);
+  const [confirmAll, setConfirmAll] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState<{ friendId: string; done: number; total: number } | null>(null);
 
   const incoming = s.friendships.filter((f) => f.status === "pending" && f.addressee === myId);
   const outgoing = s.friendships.filter((f) => f.status === "pending" && f.requester === myId);
@@ -36,6 +39,26 @@ export default function Friends() {
   const friendIds = friends.map(other);
 
   const myRecipes = s.recipes.filter((r) => r.owner_id === myId).sort((a, b) => a.title.localeCompare(b.title));
+  const savedIds = new Set(myRecipes.map((r) => r.copied_from).filter(Boolean));
+  const myIds = new Set(myRecipes.map((r) => r.id));
+  // Skip ones already saved, and a friend's copies of your own recipes.
+  const unsavedFrom = (friendId: string) => s.recipes.filter((r) => r.owner_id === friendId && !savedIds.has(r.id) && !(r.copied_from && myIds.has(r.copied_from)));
+  const sharedCount = (friendId: string) => s.recipes.filter((r) => r.owner_id === friendId).length;
+
+  async function saveAll(friendId: string) {
+    const todo = unsavedFrom(friendId);
+    const who = nameOf(s.people.get(friendId));
+    setConfirmAll(null);
+    let done = 0, failed = 0;
+    for (const r of todo) {
+      setSavingAll({ friendId, done, total: todo.length });
+      const copy = await saveCopy(r, r.id, who, myId);
+      if (copy) { s.upsertRecipeLocal(copy); done++; } else failed++;
+    }
+    setSavingAll(null);
+    s.toast(failed ? `Saved ${done} of ${todo.length} recipes from ${who}. Tap again to try the rest.` : `Saved ${done} ${done === 1 ? "recipe" : "recipes"} from ${who} to your box`);
+  }
+
   const asksForMe = s.requests.filter((q) => q.to_user === myId && q.status === "open");
   const myAsks = s.requests.filter((q) => q.from_user === myId);
 
@@ -174,10 +197,29 @@ export default function Friends() {
 
       <div className="day"><span className="label" style={{ margin: 0 }}>Your friends</span>
         {friends.length === 0 && <p className="muted" style={{ margin: 0 }}>No friends yet. Add someone above.</p>}
-        {friends.map((f) => { const p = s.people.get(other(f)); return (
-          <div className="pentry" key={f.id}><span className="t">{nameOf(p)} <span className="muted small">{p?.email}</span></span>
-            <button className="iconbtn" onClick={() => remove(f.id, "Friend removed")}>Remove</button></div>
-        ); })}
+        {friends.map((f) => {
+          const id = other(f), p = s.people.get(id);
+          const left = unsavedFrom(id).length, seen = sharedCount(id);
+          const busy = savingAll?.friendId === id;
+          return (
+            <div key={f.id}>
+              <div className="pentry"><span className="t">{nameOf(p)} <span className="muted small">{p?.email}{seen > 0 ? ` · ${seen} ${seen === 1 ? "recipe" : "recipes"} you can see` : ""}</span></span>
+                {busy ? <span className="muted small">Saving {savingAll!.done + 1} of {savingAll!.total}…</span>
+                  : left > 0 ? <button className="btn small" disabled={!!savingAll} onClick={() => setConfirmAll(id)}>Save all {left} to my box</button>
+                  : seen > 0 ? <span className="muted small">✓ All saved</span> : null}
+                <button className="iconbtn" onClick={() => remove(f.id, "Friend removed")}>Remove</button></div>
+              {confirmAll === id && (
+                <div className="confirm">
+                  <span>Save {left} {left === 1 ? "recipe" : "recipes"} from {nameOf(p)} into your box as your own copies? You can edit or delete them later.</span>
+                  <button className="btn small primary" onClick={() => saveAll(id)}>Yes, save them</button>
+                  <button className="btn small" onClick={() => setConfirmAll(null)}>Not now</button>
+                </div>
+              )}
+            </div>
+          ); })}
+        {friends.some((f) => sharedCount(other(f)) === 0) && (
+          <p className="muted small" style={{ margin: 0 }}>You see a friend's recipes once they share some with you, or once they let friends see their whole recipe box.</p>
+        )}
         {outgoing.map((f) => (
           <div className="pentry" key={f.id}><span className="t">{s.people.get(f.addressee)?.email ?? "Pending"} <span className="muted small">request sent</span></span>
             <button className="iconbtn" onClick={() => remove(f.id, "Request cancelled")}>Cancel</button></div>
